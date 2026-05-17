@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CNN 提取音色与声音特征</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  :root {
+    --bg: #f5f5f5; --surface: #ffffff; --border: #d0d0d0;
+    --text: #1a1a1a; --text2: #4a4a4a; --accent: #1a6dd4;
+    --green: #1a7a2e; --orange: #b85c00; --red: #c41a1a;
+    --purple: #6b21c4; --cyan: #0d7a6e; --pink: #c41a7a;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); line-height:1.6; }
+  .container { max-width:1100px; margin:0 auto; padding:2rem 1.5rem; }
+  h1 { font-size:2rem; margin-bottom:.3rem; }
+  h2 { font-size:1.35rem; color:var(--accent); margin:1.8rem 0 .8rem; padding-bottom:.3rem; border-bottom:2px solid var(--accent); }
+  h3 { font-size:1.05rem; color:var(--text); margin:1.2rem 0 .5rem; }
+  p, li { margin:.5rem 0; color:var(--text2); font-size:.92rem; }
+  ul { padding-left:1.3rem; }
+  strong { color:var(--text); }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1.2rem 1.4rem; margin:1rem 0; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:1rem 0; }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; }
+  .grid4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:1rem; }
+  canvas { display:block; width:100%; border-radius:6px; background:#fafafa; border:1px solid var(--border); margin:.6rem 0; }
+  .formula-block { display:block; text-align:center; padding:.7rem; margin:.6rem 0; background:rgba(26,109,212,.04); border-radius:6px; overflow-x:auto; }
+  .highlight { color:var(--green); font-weight:600; }
+  .warn { color:var(--orange); }
+  .danger { color:var(--red); }
+  .badge { display:inline-block; padding:.15rem .55rem; border-radius:10px; font-size:.75rem; font-weight:600; }
+  .badge-green { background:rgba(26,122,46,.12); color:var(--green); }
+  .badge-orange { background:rgba(184,92,0,.12); color:var(--orange); }
+  .badge-red { background:rgba(196,26,26,.12); color:var(--red); }
+  .badge-purple { background:rgba(107,33,196,.12); color:var(--purple); }
+  .badge-cyan { background:rgba(13,122,110,.12); color:var(--cyan); }
+  .badge-pink { background:rgba(196,26,122,.12); color:var(--pink); }
+  .slider-group { margin:.6rem 0; }
+  .slider-group label { display:flex; justify-content:space-between; font-size:.82rem; color:var(--text2); }
+  .slider-group input[type=range] { width:100%; margin:.3rem 0; accent-color:var(--accent); }
+  .tabs { display:flex; gap:.3rem; margin-bottom:.8rem; flex-wrap:wrap; }
+  .tab { padding:.4rem 1rem; border:1px solid var(--border); border-radius:6px 6px 0 0; background:var(--surface); color:var(--text2); cursor:pointer; font-size:.85rem; transition:all .15s; }
+  .tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .tab:hover:not(.active) { background:rgba(26,109,212,.08); }
+  .legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin:.4rem 0; font-size:.8rem; }
+  .legend span { display:flex; align-items:center; gap:.3rem; }
+  .legend .dot { display:inline-block; width:10px; height:10px; border-radius:50%; }
+  button { padding:.45rem 1rem; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); cursor:pointer; font-size:.85rem; margin:.2rem .3rem .2rem 0; transition:all .15s; }
+  button:hover { background:rgba(26,109,212,.08); border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.primary:hover { background:rgba(26,109,212,.85); }
+  .comparison-table { width:100%; border-collapse:collapse; margin:.8rem 0; font-size:.88rem; }
+  .comparison-table th { background:var(--surface); color:var(--text); padding:.5rem .8rem; text-align:left; border-bottom:2px solid var(--border); }
+  .comparison-table td { padding:.45rem .8rem; border-bottom:1px solid var(--border); color:var(--text2); }
+  .comparison-table tr:hover td { background:rgba(26,109,212,.04); }
+  .meter { display:flex; align-items:center; gap:.5rem; margin:.3rem 0; }
+  .meter-bar { height:14px; border-radius:7px; transition:width .3s; min-width:2px; }
+  .meter-label { font-size:.78rem; color:var(--text2); min-width:100px; }
+  .callout { padding:.8rem 1rem; border-radius:6px; margin:.6rem 0; font-size:.88rem; }
+  .callout-info { background:rgba(26,109,212,.06); border-left:3px solid var(--accent); }
+  .callout-warn { background:rgba(184,92,0,.06); border-left:3px solid var(--orange); }
+  .callout-success { background:rgba(26,122,46,.06); border-left:3px solid var(--green); }
+  .pipeline-arrow { display:flex; align-items:center; justify-content:center; font-size:1.5rem; color:var(--accent); padding:.3rem 0; }
+  .pipeline-step { text-align:center; padding:.6rem .4rem; border-radius:8px; border:1px solid var(--border); background:var(--surface); font-size:.82rem; }
+  .pipeline-step .step-label { font-weight:600; color:var(--accent); margin-bottom:.3rem; }
+  .pipeline-step .step-detail { color:var(--text2); font-size:.76rem; }
+  .filter-viz { position:relative; display:inline-block; }
+  .kernel-grid { display:inline-grid; gap:2px; }
+  .kernel-cell { width:24px; height:24px; border-radius:3px; display:flex; align-items:center; justify-content:center; font-size:.6rem; font-weight:600; color:#fff; }
+  @media (max-width:768px) { .grid2,.grid3,.grid4 { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>CNN 提取音色与声音特征</h1>
+<p>从物理声谱到感知音色——卷积神经网络如何自动发现人类音色空间的结构。基于 Pons et al. (2017)、Kong (2011)、SpectroFusionNet (2025) 等研究。</p>
+
+<!-- ===== §1 Pipeline ===== -->
+<h2>1. 核心流水线：音频 → 声谱图 → CNN</h2>
+<div class="card">
+  <h3>从连续波形到 2D 图像输入</h3>
+  <p>声谱图将声音的 <span class="highlight">频率 × 时间 × 强度</span> 编码为一个 2D 矩阵——CNN 视角下，这恰好是一张"图像"。</p>
+  <div class="grid4" style="text-align:center;margin:1rem 0;">
+    <div class="pipeline-step">
+      <div class="step-label">连续波形 $s(t)$</div>
+      <div class="step-detail">时间 × 振幅</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-label">STFT</div>
+      <div class="step-detail">窗长 $N$, hop $H$<br>→ 复数谱 $S(f,t)$</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-label">Mel 映射 + log</div>
+      <div class="step-detail">对数频率尺度<br>$\log(\alpha X + \beta)$</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-label">2D CNN</div>
+      <div class="step-detail">卷积 → 特征 → 分类</div>
+    </div>
+  </div>
+  <div class="callout callout-info">
+    <strong>物理对应：</strong>STFT = 耳蜗基底膜的频谱分析；Mel 映射 = 临界带感知（高频低分辨率）；对数压缩 = 响度的对数感知（Weber-Fechner 定律）。
+  </div>
+</div>
+
+<!-- ===== §1b Mel vs Linear Spectrogram ===== -->
+<h2>2. 声谱图：线性 vs. Mel 频率尺度</h2>
+<div class="card">
+  <h3>交互演示：同一个声音，两种频谱图</h3>
+  <p>同一段合成信号（基频 220 Hz + 前 8 个谐波 + 300–5000 Hz 扫频 + 瞬态）分别以线性频率和 Mel 频率绘制。<strong>观察</strong>：Mel 尺度在低频展开更多细节、高频压缩——这正好匹配听觉临界带。</p>
+  <div class="tabs" id="specTabs">
+    <div class="tab active" onclick="setSpecMode('linear')">线性频率（FFT bins）</div>
+    <div class="tab" onclick="setSpecMode('mel')">Mel 频率（等效临界带）</div>
+  </div>
+  <canvas id="canvasSpectrogram" height="320"></canvas>
+  <div class="grid2" style="margin-top:.5rem;">
+    <div>
+      <div class="meter">
+        <span class="meter-label">低频分辨率</span>
+        <div style="flex:1;background:#eee;border-radius:7px;overflow:hidden;height:14px;">
+          <div class="meter-bar" id="lowFreqRes" style="width:50%;background:var(--accent);"></div>
+        </div>
+        <span id="lowFreqResVal" style="font-size:.78rem;min-width:60px;">中等</span>
+      </div>
+    </div>
+    <div>
+      <div class="meter">
+        <span class="meter-label">高频分辨率</span>
+        <div style="flex:1;background:#eee;border-radius:7px;overflow:hidden;height:14px;">
+          <div class="meter-bar" id="hiFreqRes" style="width:50%;background:var(--orange);"></div>
+        </div>
+        <span id="hiFreqResVal" style="font-size:.78rem;min-width:60px;">中等</span>
+      </div>
+    </div>
+  </div>
+  <div class="callout callout-warn">
+    <strong>关键差异：</strong>线性频率的 FFT bins 在 0–22050 Hz 均匀分布（等带宽），在低频区对人耳来说"过度稀疏"——150 Hz 纯音仅占 ~3.5 像素。Mel 尺度在 0–1000 Hz 范围内展开更多 bin，匹配临界带的对数间距（$\text{ERB} \approx 24.7(4.37f/1000 + 1)$）。
+  </div>
+</div>
+
+<!-- ===== §2b Pipeline & CNN Architecture ===== -->
+<h2>3. CNN 架构：从像素到音色特征</h2>
+<div class="card">
+  <h3>交互演示：CNN 卷积核在声谱图上做什么</h3>
+  <p>点击不同层，查看对应的卷积核类型及其在声谱图上检测的模式。这是 Pons et al. (2017) 的经验观察的交互式重现。</p>
+  <div class="tabs" id="layerTabs">
+    <div class="tab active" onclick="setCNNLayer(0)">Conv 1-2（浅层）</div>
+    <div class="tab" onclick="setCNNLayer(1)">Conv 3-4（中层）</div>
+    <div class="tab" onclick="setCNNLayer(2)">Conv 5+（深层）</div>
+  </div>
+  <div class="grid2">
+    <div>
+      <canvas id="canvasKernel" height="220"></canvas>
+      <p style="text-align:center;font-size:.8rem;color:var(--text2);">卷积核形态（在声谱图空间）</p>
+    </div>
+    <div>
+      <canvas id="canvasActivation" height="220"></canvas>
+      <p style="text-align:center;font-size:.8rem;color:var(--text2);">激活响应（高亮区域 = 检测到模式）</p>
+    </div>
+  </div>
+  <div id="layerDesc" style="margin-top:.5rem;"></div>
+</div>
+
+<!-- ===== §3 MDS ↔ CNN ===== -->
+<h2>4. CNN 自动重现 MDS 音色空间</h2>
+<div class="card">
+  <h3>一个令人满意的结果</h3>
+  <p>没有任何先验音色理论注入——CNN 仅通过 2D 卷积 + 全连接分类头，自组织地学会了检测与 MDS 三维音色空间直接对应的声学基元。</p>
+  <div class="grid3" style="margin:1rem 0;">
+    <div style="text-align:center;padding:1rem;background:rgba(26,109,212,.04);border-radius:8px;">
+      <div style="font-size:.85rem;color:var(--text2);margin-bottom:.5rem;">频率轴卷积核</div>
+      <div style="font-size:1.4rem;font-weight:700;color:var(--accent);">频谱包络</div>
+      <div style="font-size:.8rem;color:var(--text2);margin-top:.3rem;">→ MDS Dim 1<br>"亮度"</div>
+    </div>
+    <div style="text-align:center;padding:1rem;background:rgba(26,122,46,.04);border-radius:8px;">
+      <div style="font-size:.85rem;color:var(--text2);margin-bottom:.5rem;">时间轴卷积核</div>
+      <div style="font-size:1.4rem;font-weight:700;color:var(--green);">起奏/衰减</div>
+      <div style="font-size:.8rem;color:var(--text2);margin-top:.3rem;">→ MDS Dim 2<br>"锋利度"</div>
+    </div>
+    <div style="text-align:center;padding:1rem;background:rgba(107,33,196,.04);border-radius:8px;">
+      <div style="font-size:.85rem;color:var(--text2);margin-bottom:.5rem;">频率×时间核</div>
+      <div style="font-size:1.4rem;font-weight:700;color:var(--purple);">频谱纹理</div>
+      <div style="font-size:.8rem;color:var(--text2);margin-top:.3rem;">→ MDS Dim 3<br>"不规则度"</div>
+    </div>
+  </div>
+  <div class="callout callout-success">
+    <strong>核心发现：</strong>CNN 的 pool5/fc-1 层激活向量做 PCA 或 t-SNE 后，其近邻结构 <span class="highlight">高度重现</span> 了人类 MDS 音色空间的拓扑。CNN 没有"学习 MDS"——它学习的是产生 MDS 空间所需的声学基元。
+  </div>
+</div>
+
+<!-- ===== §4 Translation Equivariance ===== -->
+<h2>5. 平移等变性：CNN 为何天然适合音色</h2>
+<div class="card">
+  <h3>频率平移 = 同一乐器演奏不同音高</h3>
+  <p>CNN 的平移等变性在音频中具有清晰的物理含义。交互演示：拖动"音高"滑块，观察谐波列在 Mel 声谱图上的垂直平移——CNN 的卷积核在任何位置都能检测到相同的模式。</p>
+  <div class="slider-group">
+    <label><span>音高（基频）</span><span><span id="pitchVal">220</span> Hz</span></label>
+    <input type="range" id="pitchSlider" min="80" max="800" value="220" step="5">
+  </div>
+  <canvas id="canvasEquivariance" height="280"></canvas>
+  <div class="grid2" style="margin-top:.5rem;">
+    <div class="callout callout-info">
+      <strong>频率轴平移 → 音高不变</strong><br>同一乐器演奏 A3 (220 Hz) 或 C4 (262 Hz)，谐波列在 Mel 轴上整体上移/下移。CNN 的卷积核在任何垂直位置都能检测到相同的谐波模式——<span class="highlight">自然习得音高不变的音色识别</span>。
+    </div>
+    <div class="callout callout-info">
+      <strong>时间轴平移 → 起奏对齐不变</strong><br>同一个钢琴起奏模式出现在声谱图的第 100 帧或第 500 帧，CNN 的时间轴卷积核都能检测到——<span class="highlight">自然习得时间对齐不变性</span>。无需 DTW 或显式对齐。
+    </div>
+  </div>
+</div>
+
+<!-- ===== §5 Architecture Comparison ===== -->
+<h2>6. 主流架构与性能</h2>
+<div class="card">
+  <h3>交互演示：参数量 vs. 分类准确率</h3>
+  <p>对比不同 CNN 架构在音频分类任务上的参数规模和典型准确率。<strong>点击架构名称</strong>查看其特点。</p>
+  <canvas id="canvasArch" height="320"></canvas>
+  <div id="archInfo" style="margin-top:.5rem;"></div>
+</div>
+
+<!-- ===== §6 Multi-spectrogram Fusion ===== -->
+<h2>7. 多频谱融合：SpectroFusionNet (2025)</h2>
+<div class="card">
+  <h3>三种互补谱表示 → 三个并行 CNN → 特征融合</h3>
+  <p>不同的声谱图捕获互补的时频信息。SpectroFusionNet（Nature Scientific Reports, 2025）将三种谱表示分别输入三个预训练 CNN，再拼接特征向量。</p>
+  <div class="grid3" style="margin:1rem 0;">
+    <div style="text-align:center;padding:.8rem;border:1px solid var(--accent);border-radius:8px;">
+      <div style="font-weight:600;color:var(--accent);">Mel 声谱图</div>
+      <div style="font-size:.8rem;color:var(--text2);margin:.3rem 0;">匹配听觉临界带</div>
+      <div style="font-size:.78rem;color:var(--text2);">→ MobileNetV2</div>
+    </div>
+    <div style="text-align:center;padding:.8rem;border:1px solid var(--green);border-radius:8px;">
+      <div style="font-weight:600;color:var(--green);">Gammatone 谱</div>
+      <div style="font-size:.8rem;color:var(--text2);margin:.3rem 0;">耳蜗滤波器组模型</div>
+      <div style="font-size:.78rem;color:var(--text2);">→ ResNet-50</div>
+    </div>
+    <div style="text-align:center;padding:.8rem;border:1px solid var(--purple);border-radius:8px;">
+      <div style="font-weight:600;color:var(--purple);">CWT 谱</div>
+      <div style="font-size:.8rem;color:var(--text2);margin:.3rem 0;">小波连续变换（恒定 Q）</div>
+      <div style="font-size:.78rem;color:var(--text2);">→ InceptionV3</div>
+    </div>
+  </div>
+  <div class="pipeline-arrow">↓ 特征拼接 → 全连接分类器 ↓</div>
+  <div class="callout callout-success">
+    <strong>结果：</strong>在电吉他演奏技巧识别上超越任何单谱方法。<span class="highlight">直接验证了不同谱表示捕获互补的时频信息</span>——Mel 擅长宏观频谱形状，Gammatone 更接近耳蜗物理，CWT 在瞬态和调制上有优势。
+  </div>
+</div>
+
+<!-- ===== §7 2D vs 1D CNN ===== -->
+<h2>8. 2D-CNN（声谱图）vs 1D-CNN（波形）</h2>
+<div class="card">
+  <div class="grid2">
+    <div>
+      <h3 style="color:var(--accent);">2D-CNN + 声谱图 <span class="badge badge-green">主流</span></h3>
+      <ul>
+        <li>输入：log-Mel 声谱图 $(M \times T)$</li>
+        <li>复用图像分类的全部成果（VGG、ResNet 迁移学习）</li>
+        <li><strong>小样本有效</strong>——迁移学习 + 预训练权重</li>
+        <li>工业标准：98%+ 乐器分类（受控条件）</li>
+        <li>自动习得频率-时间平移等变性</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="color:var(--purple);">1D-CNN + 原始波形 <span class="badge badge-orange">前沿</span></h3>
+      <ul>
+        <li>输入：44.1 kHz 样本序列</li>
+        <li>第一层学习类滤波器的冲激响应</li>
+        <li>理论上有能力学习<strong>任意基底</strong>（不限 Fourier）</li>
+        <li>需要<strong>数量级更大的数据</strong>才能泛化</li>
+        <li>主要用于语音合成等生成式任务（WaveNet）</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout callout-info">
+    <strong>当前工业实践：</strong>声谱图 → 2D CNN 是绝对主流方案。1D-CNN 在判别式任务上远不如声谱图 + 预训练 CNN 的迁移学习，但对生成式任务（如 WaveNet 语音合成、音乐生成）不可或缺。
+  </div>
+</div>
+
+<!-- ===== §8 Physical ↔ CNN correspondence ===== -->
+<h2>9. 物理维度 ↔ CNN 对应</h2>
+<div class="card">
+  <table class="comparison-table">
+    <tr><th>物理概念</th><th>CNN 中的对应</th><th>学习结果</th></tr>
+    <tr>
+      <td>频率-强度分布</td>
+      <td>声谱图的垂直方向（Mel 频带）</td>
+      <td>Conv 层沿频率轴检测频谱包络形状</td>
+    </tr>
+    <tr>
+      <td>时间-强度包络</td>
+      <td>声谱图的水平方向（时间帧）</td>
+      <td>Conv 层沿时间轴检测起奏/衰减</td>
+    </tr>
+    <tr>
+      <td>频谱-时间联合模式</td>
+      <td>2D 卷积核覆盖的频率-时间矩形</td>
+      <td>检测谐波列、噪声纹理、调制形状</td>
+    </tr>
+    <tr>
+      <td><span class="danger">相位</span></td>
+      <td><span class="danger">被丢弃</span>（仅保留幅度）</td>
+      <td>对音色分类几乎无影响——模块二的结论</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== §9 Current Limits ===== -->
+<h2>10. 当前极限与拓展方向</h2>
+<div class="card">
+  <table class="comparison-table">
+    <tr><th>方向</th><th>能力</th><th>限制</th></tr>
+    <tr><td>乐器分类</td><td><span class="badge badge-green">98%+</span>（受控条件）</td><td>混合线条中的单个乐器分离仍需波形层面</td></tr>
+    <tr><td>演奏技巧识别</td><td><span class="badge badge-green">有效</span>（多谱融合）</td><td>训练数据稀缺</td></tr>
+    <tr><td>音乐情感/风格标记</td><td><span class="badge badge-orange">中等有效</span></td><td>主观标定不可靠</td></tr>
+    <tr><td>生成式音色操控</td><td><span class="badge badge-orange">初步</span>（扩散模型 + 时域网络）</td><td>与符号化的音乐知识结合不足</td></tr>
+    <tr><td>跨乐器泛化</td><td><span class="badge badge-red">有限</span></td><td>CNN 过度依赖训练集中的特定乐器组合</td></tr>
+  </table>
+</div>
+
+<!-- ===== Summary ===== -->
+<h2>总结</h2>
+<div class="card">
+  <div class="callout callout-success">
+    <strong>频率-强度-时间框架 → 声谱图 → 2D CNN 构成了当前音频音色理解的最优计算路径。</strong> CNN 在此路径上自组织地学会检测频谱包络（对应亮度）、时间包络（对应起奏形态）、和频谱纹理（对应规则度）——这三者恰好覆盖了 Grey (1977) 以来 MDS 音色空间的核心维度。物理框架提供了完备的输入基底，CNN 提供了从物理维度到感知维度的自动映射——这一组合在最基本的层面上是"正确的"，且在实践中已被证明。
+  </div>
+  <p style="margin-top:1rem;font-size:.88rem;color:var(--text2);">
+    <strong>核心公式：</strong>
+    声谱图像素 $(f, t)$ 对应物理三元组 $(f, t, a)$。CNN 的 2D 卷积核 $\mathbf{K} \in \mathbb{R}^{k_f \times k_t}$ 在 $(f, t)$ 近邻上计算
+  </p>
+  <div class="formula-block">$$y_{i,j} = \sigma\!\Bigl(\sum_{m=0}^{k_f-1}\sum_{n=0}^{k_t-1} K_{m,n} \cdot x_{i+m,\, j+n} + b\Bigr)$$</div>
+  <p style="font-size:.88rem;color:var(--text2);">
+    其中 $x_{i,j}$ 是 Mel 声谱图在频带 $i$、时间帧 $j$ 处的对数能量，$\sigma$ 是非线性激活函数。这个操作的物理意义：<span class="highlight">在频率-时间近邻中检测局部模式</span>——等价于听觉皮层对频谱-时间纹理的响应。
+  </p>
+</div>
+
+<p style="margin-top:2rem;padding:1rem;text-align:center;font-size:.9rem;color:var(--text2);border-top:1px solid var(--border);">
+  <strong>模块五</strong> — CNN 提取音色与声音特征 · Sonic Atlas 研究项目
+</p>
+
+</div><!-- end container -->
+
+<!-- ===== KaTeX CDN ===== -->
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '$', right: '$', display: false},
+      {left: '\\(', right: '\\)', display: false},
+      {left: '\\[', right: '\\]', display: true}
+    ]
+  });
+});
+</script>
+
+<!-- ===== Main JS ===== -->
+<script>
+'use strict';
+
+/* ── §2 Spectrogram: Linear vs Mel ── */
+let specMode = 'linear';
+function setSpecMode(m) {
+  specMode = m;
+  document.querySelectorAll('#specTabs .tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#specTabs .tab')[m === 'linear' ? 0 : 1].classList.add('active');
+  drawSpectrogram();
+}
+
+function drawSpectrogram() {
+  const c = document.getElementById('canvasSpectrogram');
+  const ctx = c.getContext('2d');
+  const W = c.width = c.offsetWidth * 2, H = c.height = 320 * 2;
+  ctx.scale(2, 2);
+  const w = W / 2, h = H / 2;
+  ctx.clearRect(0, 0, w, h);
+
+  const pad = { l: 45, r: 15, t: 15, b: 35 };
+  const sw = w - pad.l - pad.r, sh = h - pad.t - pad.b;
+
+  // Frequency mapping
+  function freqToY(f) {
+    if (specMode === 'linear') {
+      return pad.t + sh * (1 - f / 12000);
+    } else {
+      // Mel scale: mel = 2595 * log10(1 + f/700)
+      const melMax = 2595 * Math.log10(1 + 12000 / 700);
+      const mel = 2595 * Math.log10(1 + f / 700);
+      return pad.t + sh * (1 - mel / melMax);
+    }
+  }
+
+  // Draw axes
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = '#888';
+  ctx.font = '9px system-ui';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+
+  const freqs = [100, 500, 1000, 2000, 4000, 8000];
+  freqs.forEach(f => {
+    const y = freqToY(f);
+    if (y > pad.t && y < pad.t + sh) {
+      ctx.beginPath();
+      ctx.moveTo(pad.l, y);
+      ctx.lineTo(pad.l + sw, y);
+      ctx.strokeStyle = '#e0e0e0';
+      ctx.stroke();
+      ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f + '', pad.l - 5, y);
+    }
+  });
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (let t = 0; t <= 500; t += 100) {
+    const x = pad.l + (t / 500) * sw;
+    ctx.fillText(t + 'ms', x, pad.t + sh + 8);
+  }
+
+  // Generate synthetic spectrogram data
+  const nTime = 200, nFreq = 100;
+  const imgData = ctx.createImageData(sw, sh);
+  const canvasBuf = new Float32Array(Math.ceil(sw) * Math.ceil(sh));
+
+  // Synthesize: harmonic series + sweep + transient + noise
+  const f0 = 220;
+  const timeDur = 0.5; // 500ms
+  for (let py = 0; py < Math.ceil(sh); py++) {
+    for (let px = 0; px < Math.ceil(sw); px++) {
+      const t = (px / sw) * timeDur;
+      // Map pixel to frequency using current scale
+      const yNorm = 1 - py / sh;
+      let f;
+      if (specMode === 'linear') {
+        f = yNorm * 12000;
+      } else {
+        const melMax = 2595 * Math.log10(1 + 12000 / 700);
+        const mel = yNorm * melMax;
+        f = 700 * (Math.pow(10, mel / 2595) - 1);
+      }
+
+      let energy = 0;
+      // Harmonics (decaying)
+      for (let k = 1; k <= 8; k++) {
+        const hf = f0 * k;
+        const bw = specMode === 'mel' ? Math.max(hf * 0.03, 15) : 40;
+        const dist = Math.abs(f - hf) / bw;
+        energy += (0.8 / k) * Math.exp(-dist * dist * 4);
+      }
+      // Frequency sweep 300→5000 Hz (0.1s → 0.4s)
+      if (t > 0.1 && t < 0.4) {
+        const sweepT = (t - 0.1) / 0.3;
+        const sweepF = 300 + sweepT * 4700;
+        const bw = specMode === 'mel' ? Math.max(sweepF * 0.04, 20) : 60;
+        const dist = Math.abs(f - sweepF) / bw;
+        energy += 0.6 * Math.exp(-dist * dist * 3);
+      }
+      // Transient at t=250ms
+      if (Math.abs(t - 0.25) < 0.015) {
+        energy += 0.4 * Math.exp(-((f - 2000) * (f - 2000)) / 500000);
+      }
+      // Noise floor
+      energy += 0.03 + 0.02 * Math.random();
+
+      const idx = py * Math.ceil(sw) + px;
+      canvasBuf[idx] = Math.min(energy, 1.2);
+    }
+  }
+
+  // Map to colors (hot colormap)
+  const maxE = 1.0;
+  for (let py = 0; py < Math.ceil(sh); py++) {
+    for (let px = 0; px < Math.ceil(sw); px++) {
+      const v = canvasBuf[py * Math.ceil(sw) + px] / maxE;
+      const clamped = Math.max(0, Math.min(1, v));
+      // Hot colormap: black → red → yellow → white
+      let r, g, b;
+      if (clamped < 0.33) {
+        r = Math.round(clamped * 3 * 200);
+        g = 0; b = 0;
+      } else if (clamped < 0.66) {
+        r = 200;
+        g = Math.round((clamped - 0.33) * 3 * 200);
+        b = 0;
+      } else {
+        r = 255;
+        g = 255;
+        b = Math.round((clamped - 0.66) * 3 * 150);
+      }
+      const idx = (py * Math.ceil(sw) + px) * 4;
+      imgData.data[idx] = r;
+      imgData.data[idx + 1] = g;
+      imgData.data[idx + 2] = b;
+      imgData.data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, pad.l, pad.t);
+
+  // Draw 150 Hz annotation
+  const y150 = freqToY(150);
+  if (y150 > pad.t && y150 < pad.t + sh) {
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y150);
+    ctx.lineTo(pad.l + sw, y150);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px system-ui';
+    ctx.textAlign = 'left';
+    ctx.fillText('150 Hz tone', pad.l + 4, y150 - 6);
+  }
+
+  // Labels
+  ctx.fillStyle = '#666';
+  ctx.font = '10px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText('时间 →', pad.l + sw / 2, h - 5);
+  ctx.save();
+  ctx.translate(10, pad.t + sh / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('频率 →', 0, 0);
+  ctx.restore();
+
+  // Update meters
+  const isLinear = specMode === 'linear';
+  document.getElementById('lowFreqRes').style.width = isLinear ? '25%' : '75%';
+  document.getElementById('lowFreqResVal').textContent = isLinear ? '粗（等带宽）' : '细（展开）';
+  document.getElementById('lowFreqRes').style.background = isLinear ? 'var(--red)' : 'var(--green)';
+  document.getElementById('hiFreqRes').style.width = isLinear ? '75%' : '30%';
+  document.getElementById('hiFreqResVal').textContent = isLinear ? '细（冗余）' : '粗（压缩）';
+  document.getElementById('hiFreqRes').style.background = isLinear ? 'var(--orange)' : 'var(--accent)';
+}
+
+/* ── §3 CNN Layer Visualization ── */
+let cnnLayer = 0;
+function setCNNLayer(n) {
+  cnnLayer = n;
+  document.querySelectorAll('#layerTabs .tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#layerTabs .tab')[n].classList.add('active');
+  drawCNNLayer();
+}
+
+function drawCNNLayer() {
+  const cK = document.getElementById('canvasKernel');
+  const ctxK = cK.getContext('2d');
+  const WK = cK.width = cK.offsetWidth * 2, HK = cK.height = 220 * 2;
+  ctxK.scale(2, 2);
+  const wk = WK / 2, hk = HK / 2;
+  ctxK.clearRect(0, 0, wk, hk);
+
+  const cA = document.getElementById('canvasActivation');
+  const ctxA = cA.getContext('2d');
+  const WA = cA.width = cA.offsetWidth * 2, HA = cA.height = 220 * 2;
+  ctxA.scale(2, 2);
+  const wa = WA / 2, ha = HA / 2;
+  ctxA.clearRect(0, 0, wa, ha);
+
+  const kernels = [
+    // [type, grid data, description, mds mapping, activation pattern]
+    {
+      type: '垂直边缘',
+      grid: [[-1,0,1],[-1,0,1],[-1,0,1]],
+      color: '#1a6dd4',
+      desc: '检测频带间的能量跳变——频谱包络的轮廓',
+      mds: 'Dim 1（频谱重心/亮度）',
+      mdsColor: 'var(--accent)',
+      activDesc: '在谐波列的上下边界处产生强响应'
+    },
+    {
+      type: '水平条纹',
+      grid: [[-1,-1,-1],[2,2,2],[-1,-1,-1]],
+      color: '#1a7a2e',
+      desc: '检测谐波列的水平延伸——稳态谐波结构',
+      mds: 'Dim 1 + Dim 3（频谱结构完整性）',
+      mdsColor: 'var(--green)',
+      activDesc: '在每个谐波频率处沿时间方向产生条带响应'
+    },
+    {
+      type: '对角纹理',
+      grid: [[2,-1,-1],[-1,2,-1],[-1,-1,2]],
+      color: '#6b21c4',
+      desc: '检测频率-时间联合模式——起奏段的频谱演化',
+      mds: 'Dim 2（起奏时间）+ Dim 3（频谱纹理）',
+      mdsColor: 'var(--purple)',
+      activDesc: '在起奏段的频谱滑动处产生斜线响应'
+    }
+  ];
+
+  const layers = [
+    { kernels: [kernels[0], kernels[1]], title: 'Conv 1-2（浅层）', desc: '垂直边缘 + 水平条纹 → 频谱包络轮廓 & 谐波结构' },
+    { kernels: [kernels[1], kernels[2]], title: 'Conv 3-4（中层）', desc: '谐波纹理 + 对角模式 → 频谱规则性 vs. 不规则性' },
+    { kernels: [kernels[2], kernels[0]], title: 'Conv 5+（深层）', desc: '跨频带时变协动 → 起奏形态 & 频谱演化' }
+  ];
+
+  const layer = layers[cnnLayer];
+
+  // Draw kernels
+  const cellSize = 28;
+  const gap = 12;
+  layer.kernels.forEach((kern, ki) => {
+    const grid = kern.grid;
+    const gridH = grid.length, gridW = grid[0].length;
+    const startX = 20 + ki * (gridW * cellSize + gap + 80);
+    const startY = 20;
+
+    // Label
+    ctxK.fillStyle = kern.color;
+    ctxK.font = 'bold 11px system-ui';
+    ctxK.textAlign = 'left';
+    ctxK.fillText(kern.type, startX, startY - 5);
+
+    grid.forEach((row, ri) => {
+      row.forEach((val, ci) => {
+        const x = startX + ci * cellSize;
+        const y = startY + 5 + ri * cellSize;
+        const norm = (val + 1) / 2;
+        const r = Math.round(norm * 200);
+        const g = Math.round((1 - Math.abs(val)) * 100);
+        const b = Math.round((1 - norm) * 200);
+        ctxK.fillStyle = `rgb(${r},${g},${b})`;
+        ctxK.fillRect(x, y, cellSize - 2, cellSize - 2);
+        ctxK.fillStyle = Math.abs(val) > 0.5 ? '#fff' : '#333';
+        ctxK.font = 'bold 10px monospace';
+        ctxK.textAlign = 'center';
+        ctxK.textBaseline = 'middle';
+        ctxK.fillText(val > 0 ? '+' + val : '' + val, x + cellSize / 2 - 1, y + cellSize / 2 - 1);
+      });
+    });
+
+    // Description below kernel
+    ctxK.fillStyle = '#666';
+    ctxK.font = '9px system-ui';
+    ctxK.textAlign = 'left';
+    ctxK.textBaseline = 'top';
+    const descY = startY + 5 + gridH * cellSize + 8;
+    // Word wrap
+    const words = kern.desc.split('');
+    let line = '', lineY = descY;
+    words.forEach(ch => {
+      const test = line + ch;
+      if (ctxK.measureText(test).width > gridW * cellSize + 40) {
+        ctxK.fillText(line, startX, lineY);
+        line = ch;
+        lineY += 13;
+      } else {
+        line = test;
+      }
+    });
+    if (line) ctxK.fillText(line, startX, lineY);
+
+    // MDS mapping
+    ctxK.fillStyle = kern.mdsColor;
+    ctxK.font = 'bold 9px system-ui';
+    ctxK.fillText('→ ' + kern.mds, startX, lineY + 18);
+  });
+
+  // Draw activation pattern (synthetic spectrogram with highlighted regions)
+  ctxA.fillStyle = '#fafafa';
+  ctxA.fillRect(0, 0, wa, ha);
+
+  // Draw a mini spectrogram background
+  const padA = 20;
+  const specW = wa - 2 * padA, specH = ha - 2 * padA;
+  for (let py = 0; py < specH; py += 2) {
+    for (let px = 0; px < specW; px += 2) {
+      const t = px / specW;
+      const fNorm = 1 - py / specH;
+      let energy = 0;
+      for (let k = 1; k <= 6; k++) {
+        const hf = k / 6;
+        const dist = Math.abs(fNorm - hf) / 0.03;
+        energy += (0.7 / k) * Math.exp(-dist * dist);
+      }
+      // Attack at t=0.3
+      if (Math.abs(t - 0.3) < 0.08) {
+        energy *= 1.5;
+      }
+      energy = Math.min(energy, 1);
+      const gray = Math.round(255 - energy * 200);
+      ctxA.fillStyle = `rgb(${gray},${gray},${gray})`;
+      ctxA.fillRect(padA + px, padA + py, 2, 2);
+    }
+  }
+
+  // Highlight activation regions based on layer
+  ctxA.globalAlpha = 0.35;
+  if (cnnLayer === 0) {
+    // Shallow: highlight frequency band boundaries
+    for (let k = 1; k <= 6; k++) {
+      const y = padA + specH * (1 - k / 6);
+      ctxA.fillStyle = '#1a6dd4';
+      ctxA.fillRect(padA, y - 4, specW, 8);
+    }
+    ctxA.fillStyle = '#1a7a2e';
+    ctxA.fillRect(padA, padA + specH * 0.3, specW, specH * 0.4);
+  } else if (cnnLayer === 1) {
+    // Mid: highlight texture regions
+    for (let k = 1; k <= 6; k++) {
+      const y = padA + specH * (1 - k / 6);
+      ctxA.fillStyle = '#1a7a2e';
+      ctxA.fillRect(padA, y - 2, specW * 0.7, 4);
+    }
+    ctxA.fillStyle = '#6b21c4';
+    // Diagonal slash in attack region
+    ctxA.beginPath();
+    ctxA.moveTo(padA + specW * 0.25, padA);
+    ctxA.lineTo(padA + specW * 0.35, padA);
+    ctxA.lineTo(padA + specW * 0.35 + specH * 0.5, padA + specH);
+    ctxA.lineTo(padA + specW * 0.25 + specH * 0.5, padA + specH);
+    ctxA.closePath();
+    ctxA.fill();
+  } else {
+    // Deep: highlight time-frequency co-modulation
+    ctxA.fillStyle = '#6b21c4';
+    ctxA.fillRect(padA + specW * 0.2, padA, specW * 0.2, specH);
+    ctxA.fillStyle = '#c41a1a';
+    ctxA.fillRect(padA + specW * 0.15, padA + specH * 0.15, specW * 0.3, specH * 0.7);
+  }
+  ctxA.globalAlpha = 1;
+
+  // Axes
+  ctxA.strokeStyle = '#aaa';
+  ctxA.lineWidth = 1;
+  ctxA.strokeRect(padA, padA, specW, specH);
+  ctxA.fillStyle = '#666';
+  ctxA.font = '9px system-ui';
+  ctxA.textAlign = 'center';
+  ctxA.fillText('时间 →', padA + specW / 2, ha - 4);
+  ctxA.save();
+  ctxA.translate(8, padA + specH / 2);
+  ctxA.rotate(-Math.PI / 2);
+  ctxA.fillText('频率 →', 0, 0);
+  ctxA.restore();
+
+  // Description
+  document.getElementById('layerDesc').innerHTML =
+    `<div class="callout callout-info">
+      <strong>${layer.title}：</strong>${layer.desc}<br>
+      <strong>激活特征：</strong>${layer.kernels.map(k => k.activDesc).join('；')}
+    </div>`;
+}
+
+/* ── §5 Equivariance Demo ── */
+const pitchSlider = document.getElementById('pitchSlider');
+function drawEquivariance() {
+  const f0 = +pitchSlider.value;
+  document.getElementById('pitchVal').textContent = f0;
+
+  const c = document.getElementById('canvasEquivariance');
+  const ctx = c.getContext('2d');
+  const W = c.width = c.offsetWidth * 2, H = c.height = 280 * 2;
+  ctx.scale(2, 2);
+  const w = W / 2, h = H / 2;
+  ctx.clearRect(0, 0, w, h);
+
+  const pad = { l: 50, r: 15, t: 15, b: 35 };
+  const sw = w - pad.l - pad.r, sh = h - pad.t - pad.b;
+
+  // Mel frequency mapping
+  function freqToY(f) {
+    const melMax = 2595 * Math.log10(1 + 4000 / 700);
+    const mel = 2595 * Math.log10(1 + f / 700);
+    return pad.t + sh * (1 - mel / melMax);
+  }
+
+  // Background spectrogram-like field
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fillRect(pad.l, pad.t, sw, sh);
+
+  // Draw harmonic lines for current f0
+  const harmonics = 8;
+  for (let k = 1; k <= harmonics; k++) {
+    const hf = f0 * k;
+    if (hf > 4000) break;
+    const y = freqToY(hf);
+    const amp = 1 / k;
+    ctx.fillStyle = `rgba(26,109,212,${0.15 + amp * 0.35})`;
+    ctx.fillRect(pad.l, y - 3, sw, 6);
+    ctx.fillStyle = '#1a6dd4';
+    ctx.font = 'bold 9px system-ui';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${k}f₀=${hf}Hz`, pad.l + 4, y - 5);
+  }
+
+  // Draw a convolution kernel highlight box (vertical stripe)
+  ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = '#c41a1a';
+  ctx.lineWidth = 2;
+  const kernelY = freqToY(f0 * 2) - 20;
+  const kernelH = 40;
+  ctx.strokeRect(pad.l + sw * 0.3, kernelY, sw * 0.15, kernelH);
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(196,26,26,.08)';
+  ctx.fillRect(pad.l + sw * 0.3, kernelY, sw * 0.15, kernelH);
+  ctx.fillStyle = '#c41a1a';
+  ctx.font = 'bold 9px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText('卷积核', pad.l + sw * 0.375, kernelY - 4);
+
+  // Draw same kernel at a different position (showing it detects same pattern)
+  ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = '#1a7a2e';
+  ctx.lineWidth = 2;
+  const kernelY2 = freqToY(f0 * 3) - 20;
+  ctx.strokeRect(pad.l + sw * 0.6, kernelY2, sw * 0.15, kernelH);
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(26,122,46,.08)';
+  ctx.fillRect(pad.l + sw * 0.6, kernelY2, sw * 0.15, kernelH);
+  ctx.fillStyle = '#1a7a2e';
+  ctx.fillText('同一核', pad.l + sw * 0.675, kernelY2 - 4);
+
+  // Axes
+  ctx.fillStyle = '#888';
+  ctx.font = '9px system-ui';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  [200, 500, 1000, 2000, 4000].forEach(f => {
+    const y = freqToY(f);
+    ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f + '', pad.l - 5, y);
+    ctx.strokeStyle = '#e0e0e0';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(pad.l + sw, y);
+    ctx.stroke();
+  });
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#666';
+  ctx.fillText('时间 →', pad.l + sw / 2, h - 5);
+  ctx.save();
+  ctx.translate(10, pad.t + sh / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('Mel 频率 →', 0, 0);
+  ctx.restore();
+}
+pitchSlider.addEventListener('input', drawEquivariance);
+
+/* ── §6 Architecture Comparison ── */
+const architectures = [
+  { name: '自建 CNN', params: 1, acc: 88.9, color: '#1a6dd4',
+    desc: 'Zhang et al. (2019, UCSD)：自建 CNN 在 Freesound Dataset (80 类) 上的 top-5 准确率 88.9%。参数量约 1M——轻量但有效。' },
+  { name: 'VGG19\n(迁移)', params: 144, acc: 91, color: '#1a7a2e',
+    desc: 'VGG19 预训练于 ImageNet，仅微调最后几层。参数量 144M——巨大但迁移学习避免了过拟合。在小样本任务上特别有效。' },
+  { name: 'ResNet-50', params: 25, acc: 93, color: '#b85c00',
+    desc: 'ResNet-50 的残差连接使得深层 CNN 可以训练。在乐器识别任务上 > 90%。跳跃连接解决了梯度消失问题。' },
+  { name: 'MobileNetV2', params: 3.5, acc: 90, color: '#6b21c4',
+    desc: '轻量级架构（深度可分离卷积），专为移动端/嵌入式设计。SpectroFusionNet (2025) 中用于 Mel 谱分支。' },
+  { name: 'InceptionV3', params: 24, acc: 92, color: '#c41a7a',
+    desc: '多尺度卷积核（1×1, 3×3, 5×5 并行），在不同频率-时间尺度上同时提取特征。SpectroFusionNet 中用于 CWT 谱分支。' },
+  { name: '1D-CNN\n(WaveNet)', params: 5, acc: 85, color: '#0d7a6e',
+    desc: '直接在 44.1 kHz 波形上操作。扩张因果卷积——理论上有能力学习任意基底。主要用于生成式任务，判别式精度不如 2D 方案。' }
+];
+
+let selectedArch = -1;
+function drawArch() {
+  const c = document.getElementById('canvasArch');
+  const ctx = c.getContext('2d');
+  const W = c.width = c.offsetWidth * 2, H = c.height = 320 * 2;
+  ctx.scale(2, 2);
+  const w = W / 2, h = H / 2;
+  ctx.clearRect(0, 0, w, h);
+
+  const pad = { l: 55, r: 20, t: 20, b: 45 };
+  const sw = w - pad.l - pad.r, sh = h - pad.t - pad.b;
+
+  // Axes
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t);
+  ctx.lineTo(pad.l, pad.t + sh);
+  ctx.lineTo(pad.l + sw, pad.t + sh);
+  ctx.stroke();
+
+  // X axis: params (log scale)
+  ctx.fillStyle = '#666';
+  ctx.font = '9px system-ui';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  [1, 3, 10, 25, 100].forEach(p => {
+    const x = pad.l + (Math.log10(p) / Math.log10(200)) * sw;
+    ctx.fillText(p + 'M', x, pad.t + sh + 8);
+    ctx.strokeStyle = '#e8e8e8';
+    ctx.beginPath();
+    ctx.moveTo(x, pad.t);
+    ctx.lineTo(x, pad.t + sh);
+    ctx.stroke();
+  });
+  ctx.fillText('参数量 (百万)', pad.l + sw / 2, pad.t + sh + 25);
+
+  // Y axis: accuracy
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  [80, 85, 90, 95, 100].forEach(a => {
+    const y = pad.t + sh * (1 - (a - 80) / 25);
+    ctx.fillText(a + '%', pad.l - 8, y);
+    ctx.strokeStyle = '#e8e8e8';
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(pad.l + sw, y);
+    ctx.stroke();
+  });
+  ctx.save();
+  ctx.translate(12, pad.t + sh / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.fillText('准确率', 0, 0);
+  ctx.restore();
+
+  // Plot points
+  architectures.forEach((arch, i) => {
+    const x = pad.l + (Math.log10(arch.params) / Math.log10(200)) * sw;
+    const y = pad.t + sh * (1 - (arch.acc - 80) / 25);
+    const r = selectedArch === i ? 12 : 8;
+
+    // Glow for selected
+    if (selectedArch === i) {
+      ctx.beginPath();
+      ctx.arc(x, y, 16, 0, Math.PI * 2);
+      ctx.fillStyle = arch.color + '33';
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = arch.color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = '#333';
+    ctx.font = '9px system-ui';
+    ctx.textAlign = 'center';
+    const lines = arch.name.split('\n');
+    lines.forEach((line, li) => {
+      ctx.fillText(line, x, y - r - 8 - (lines.length - 1 - li) * 12);
+    });
+
+    // Store coords for click detection
+    arch._x = x; arch._y = y;
+  });
+
+  // Update info
+  const infoEl = document.getElementById('archInfo');
+  if (selectedArch >= 0) {
+    infoEl.innerHTML = `<div class="callout callout-info"><strong>${architectures[selectedArch].name.replace('\n', ' ')}：</strong>${architectures[selectedArch].desc}</div>`;
+  } else {
+    infoEl.innerHTML = '<div class="callout callout-info" style="color:var(--text2);">点击图表中的圆点查看架构详情。</div>';
+  }
+}
+
+document.getElementById('canvasArch').addEventListener('click', e => {
+  const c = e.target;
+  const rect = c.getBoundingClientRect();
+  const scaleX = c.width / (2 * rect.width);
+  const scaleY = c.height / (2 * rect.height);
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * scaleY;
+
+  let closest = -1, minDist = 30;
+  architectures.forEach((arch, i) => {
+    if (arch._x === undefined) return;
+    const dx = mx - arch._x, dy = my - arch._y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < minDist) { minDist = dist; closest = i; }
+  });
+  selectedArch = closest;
+  drawArch();
+});
+
+/* ── Init ── */
+function init() {
+  drawSpectrogram();
+  drawCNNLayer();
+  drawEquivariance();
+  drawArch();
+}
+
+window.addEventListener('resize', init);
+init();
+</script>
+
+</body>
+</html>

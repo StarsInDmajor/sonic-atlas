@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+.direnv/
+.env
+.env.*
+
+# Generated / local data
+data/raw/*
+!data/raw/.gitkeep
+data/corpus/*
+data/processed/*
+!data/processed/.gitkeep
+data/external/*
+!data/external/.gitkeep
+outputs/
+artifacts/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+.DS_Store
+
+# Audio / large generated media
+*.wav
+*.flac
+*.mp3
+*.ogg
+*.aiff
+*.aif
+*.m4a
+*.npz
+*.npy
+*.pkl
+
+# Logs
+*.log
+result

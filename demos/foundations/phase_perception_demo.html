@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>相位感知：为什么音乐对相位聋</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  :root {
+    --bg: #f5f5f5; --surface: #ffffff; --border: #d0d0d0;
+    --text: #1a1a1a; --text2: #4a4a4a; --accent: #1a6dd4;
+    --green: #1a7a2e; --orange: #b85c00; --red: #c41a1a;
+    --purple: #6b21c4; --cyan: #0d7a6e;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); line-height:1.6; }
+  .container { max-width:1100px; margin:0 auto; padding:2rem 1.5rem; }
+  h1 { font-size:2rem; margin-bottom:.3rem; color:var(--text); }
+  h2 { font-size:1.35rem; color:var(--accent); margin:1.8rem 0 .8rem; padding-bottom:.3rem; border-bottom:2px solid var(--accent); }
+  h3 { font-size:1.05rem; color:var(--text); margin:1.2rem 0 .5rem; }
+  p, li { margin:.5rem 0; color:var(--text2); font-size:.92rem; }
+  ul { padding-left:1.3rem; }
+  strong { color:var(--text); }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1.2rem 1.4rem; margin:1rem 0; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:1rem 0; }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; }
+  canvas { display:block; width:100%; border-radius:6px; background:#fafafa; border:1px solid var(--border); margin:.6rem 0; }
+  .formula-block { display:block; text-align:center; padding:.7rem; margin:.6rem 0; background:rgba(26,109,212,.04); border-radius:6px; overflow-x:auto; }
+
+  .highlight { color:var(--green); font-weight:600; }
+  .warn { color:var(--orange); }
+  .danger { color:var(--red); }
+  .badge { display:inline-block; padding:.15rem .55rem; border-radius:10px; font-size:.75rem; font-weight:600; }
+  .badge-green { background:rgba(26,122,46,.12); color:var(--green); }
+  .badge-orange { background:rgba(184,92,0,.12); color:var(--orange); }
+  .badge-red { background:rgba(196,26,26,.12); color:var(--red); }
+
+  .slider-group { margin:.6rem 0; }
+  .slider-group label { display:flex; justify-content:space-between; font-size:.82rem; color:var(--text2); }
+  .slider-group input[type=range] { width:100%; margin:.3rem 0; accent-color:var(--accent); }
+  .slider-group .val { color:var(--accent); font-weight:600; }
+
+  .tabs { display:flex; gap:.3rem; margin-bottom:.8rem; flex-wrap:wrap; }
+  .tab { padding:.4rem 1rem; border:1px solid var(--border); border-radius:6px 6px 0 0; background:var(--surface); color:var(--text2); cursor:pointer; font-size:.85rem; transition:all .15s; }
+  .tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .tab:hover:not(.active) { background:rgba(26,109,212,.08); }
+
+  .legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin:.4rem 0; font-size:.8rem; }
+  .legend span { display:flex; align-items:center; gap:.3rem; }
+  .legend .dot { display:inline-block; width:10px; height:10px; border-radius:50%; }
+
+  button { padding:.45rem 1rem; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); cursor:pointer; font-size:.85rem; margin:.2rem .3rem .2rem 0; transition:all .15s; }
+  button:hover { background:rgba(26,109,212,.08); border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.primary:hover { background:rgba(26,109,212,.85); }
+  button.active-btn { background:var(--green); color:#fff; border-color:var(--green); }
+
+  .meter { display:flex; align-items:center; gap:.5rem; margin:.3rem 0; }
+  .meter-bar { height:14px; border-radius:7px; transition:width .3s; min-width:2px; }
+  .meter-label { font-size:.78rem; color:var(--text2); min-width:100px; }
+
+  .comparison-table { width:100%; border-collapse:collapse; margin:.8rem 0; font-size:.88rem; }
+  .comparison-table th { background:var(--surface); color:var(--text); padding:.5rem .8rem; text-align:left; border-bottom:2px solid var(--border); }
+  .comparison-table td { padding:.45rem .8rem; border-bottom:1px solid var(--border); color:var(--text2); }
+  .comparison-table tr:hover td { background:rgba(26,109,212,.04); }
+
+  @media (max-width:768px) { .grid2,.grid3 { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>相位感知：为什么音乐对"相位聋"？</h1>
+<p>Ohm (1843) 提出、Helmholtz (1863) 继承的著名假说——音色只取决于各谐波的振幅，与相位无关——哪些成立、哪些不成立？</p>
+
+<!-- ===== 1. Ohm-Helmholtz 法则 ===== -->
+<h2>1. Ohm-Helmholtz 相位聋法则</h2>
+<div class="grid2">
+  <div class="card">
+    <h3>法则陈述</h3>
+    <p>Ohm (1843): 音色（Klangfarbe）仅取决于各正弦分量的 <strong>振幅</strong>，与它们之间的 <strong>相对相位无关</strong>。</p>
+    <p>Helmholtz (1863) 在《论音的感觉》中将此推广——耳蜗作为一个 <strong>Fourier 分析器</strong>，基底膜对不同频率分量响应，神经发放率编码振幅。相位信息在此模型中被 <strong>丢弃</strong>。</p>
+  </div>
+  <div class="card">
+    <h3>现代修正</h3>
+    <p><span class="badge badge-red">作为绝对陈述是错误的</span></p>
+    <p>但在特定条件下惊人地准确：</p>
+    <ul>
+      <li>✅ 对 <strong>复杂音乐信号</strong> — 相位失真几乎不可闻</li>
+      <li>⚠️ 对 <strong>简单人工信号</strong> — 可闻（改变包络形状）</li>
+      <li>✅ 对 <strong>全局常数相移</strong> — 完全不可闻（Krishnan &amp; Condit-Schultz 2025）</li>
+      <li>⚠️ 对 <strong>极性反转(180°)</strong> — 仅对极不对称波形微弱可闻</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== 2. 交互演示核心 ===== -->
+<h2>2. 交互演示：相位对波形与听感的影响</h2>
+
+<div class="tabs" id="demoTabs">
+  <div class="tab active" onclick="switchDemo('twoTone')">二分量复合音</div>
+  <div class="tab" onclick="switchDemo('multiHarm')">多谐波复合音</div>
+  <div class="tab" onclick="switchDemo('globalShift')">全局常数相移</div>
+  <div class="tab" onclick="switchDemo('criticalBand')">临界带机制</div>
+</div>
+
+<div class="card" id="demoContent"></div>
+
+<!-- ===== 3. 感知结果汇总表 ===== -->
+<h2>3. 相位操作的感知结果</h2>
+<div class="card">
+<table class="comparison-table">
+  <tr><th>相位操作</th><th>信号类型</th><th>感知结果</th><th>证据</th></tr>
+  <tr><td>全局常数相位偏移（θ ≠ 180°）</td><td>任意</td><td><span class="badge badge-green">不可闻</span></td><td>Cheuk 2025 受控实验</td></tr>
+  <tr><td>全局极性反转（θ = 180°）</td><td>不对称波形（语音元音、管乐）</td><td><span class="badge badge-orange">弱可闻</span>（耳机、特定信号）</td><td>Lipshitz 1982; Wood效应</td></tr>
+  <tr><td>全局极性反转</td><td>典型音乐</td><td><span class="badge badge-green">几乎不可闻</span></td><td>Lipshitz 1982</td></tr>
+  <tr><td>各谐波相对相位随机化</td><td>人工多谐波</td><td><span class="badge badge-red">可闻</span> — 包络形状变化</td><td>多研究一致</td></tr>
+  <tr><td>各谐波相对相位随机化</td><td>真实音乐</td><td><span class="badge badge-green">几乎不可闻</span></td><td>Lipshitz 1982</td></tr>
+  <tr><td>全通滤波器群延迟 ~2 ms</td><td>点击 / 瞬态</td><td><span class="badge badge-red">可闻</span></td><td>Deer 1985</td></tr>
+  <tr><td>双耳间相位差 (ITD)</td><td>任意</td><td><span class="badge badge-red">可闻</span> — 但不影响单耳音色</td><td>经典研究</td></tr>
+</table>
+</div>
+
+<!-- ===== 4. 为什么：CLT效应 ===== -->
+<h2>4. 核心机制：中心极限定理拯救了音乐的相位免疫</h2>
+<div class="card">
+  <p>当信号包含<strong>大量独立谐波</strong>（如真实音乐——成百上千个）时，随机化相对相位的结果：</p>
+  <div class="formula-block">$$s(t) = \sum_{k=1}^{N} A_k \sin(2\pi k f_0 t + \phi_k)$$</div>
+  <p>若 $\phi_k$ 独立随机，则 $s(t)$ 的分布在每个时刻 $t$ 上趋向于 <strong>Gaussian 分布</strong>（CLT）。</p>
+  <ul>
+    <li>各谐波的相位随机化 → 波形细节剧烈变化</li>
+    <li>但 <strong>峰值因子（crest factor）</strong> 几乎不变——因为大量独立随机变量之和的分布形状由方差决定，而非各分量的相位</li>
+    <li>包络形状是感知音色的主要线索 → <strong>包络不变 → 音色不变</strong></li>
+  </ul>
+  <p style="margin-top:.8rem;">💡 <strong>音乐越复杂（谐波越多），相位失真越不可闻。</strong> 这就是为什么 Lipshitz (1982) 发现全通滤波器在音乐信号上不可闻——你的交响乐团、钢琴和弦、甚至一条人声轨都含有足够多的独立分量来触发这种统计平滑。</p>
+</div>
+
+<!-- ===== 4.5 Krishnan 2025 与 CLT 的统一 ===== -->
+<h2>4.5. Krishnan &amp; Condit-Schultz (2025) 与 CLT 的统一</h2>
+<div class="card">
+  <p>Krishnan &amp; Condit-Schultz (2025) 发现 <strong>全局常数相移</strong>（所有频率分量加同一角度 θ）不可感知。这与多谐波相位随机化看似不同，但 <strong>不可闻性的根源完全相同——CLT</strong>。</p>
+
+  <h3>两类相位操作的比较</h3>
+  <table class="comparison-table">
+    <tr><th></th><th>全局常数相移 (Krishnan 2025)</th><th>相对相位随机化 (Tab 2)</th></tr>
+    <tr><td>数学形式</td><td>$s_\theta(t) = \sum A_k \sin(2\pi f_k t + \theta)$</td><td>$s(t) = \sum A_k \sin(2\pi f_k t + \phi_k)$, $\phi_k$ i.i.d.</td></tr>
+    <tr><td>相对相位</td><td>谐波间相对相位<strong>不变</strong></td><td>谐波间相对相位<strong>改变</strong></td></tr>
+    <tr><td>RMS</td><td>与 θ 无关 (Parseval)</td><td>与 {φₖ} 无关 (Parseval)</td></tr>
+    <tr><td>小 N 时 CF</td><td><span class="warn">可能随 θ 变化</span></td><td><span class="warn">可能随 φ 变化</span></td></tr>
+    <tr><td>大 N 时 CF (CLT)</td><td><span class="highlight">几乎恒定</span> — Gaussian 过程的极值分布仅取决于 $R(\tau)=\sum\frac{A_k^2}{2}\cos(2\pi f_k\tau)$，与 θ 无关</td><td><span class="highlight">几乎恒定</span> — 独立随机变量之和 → Gaussian</td></tr>
+    <tr><td>大 N 时感知</td><td><span class="badge badge-green">完全不可闻</span></td><td><span class="badge badge-green">几乎不可闻</span></td></tr>
+  </table>
+
+  <h3 style="margin-top:1.2rem;">为什么 RMS 不变但 CF 可能不变？</h3>
+  <p>两种操作都只改变波形相位、不改变幅度谱 → RMS 严格不变（Parseval 定理）。</p>
+  <p>但对 <strong>小 N</strong>（如 2–3 个谐波），$\max|s_\theta(t)|$ 可以随 θ 改变 → CF 可变化。对 <strong>大 N</strong>，CLT 将 $s_\theta(t)$ 推向 Gaussian 过程 → 其极值分布仅由自相关 $R(\tau)$ 决定 → 而 $R(\tau)$ 与 $\theta$ 无关 → <strong>CF 逼近同一常数</strong>。</p>
+
+  <div class="formula-block">$$\text{CLT: }\; s_\theta(t) \xrightarrow{N \to \infty} \mathcal{N}\!\Bigl(0,\; \sum\frac{A_k^2}{2}\Bigr), \quad R(\tau) = \sum\frac{A_k^2}{2}\cos(2\pi f_k\tau) \perp \theta$$</div>
+
+  <p style="margin-top:.8rem;">📐 <strong>统一图景</strong>：Krishnan 的全局相移和 Lipshitz 的相对相位扭曲，都是同一棵 CLT 大树上的两条枝干。对复杂信号，无论你如何改变相位——全局移、各自随机化、甚至全通滤波器——只要幅度谱不变、谐波数足够多，CF 就逼近同一常数，耳朵就无法区分。</p>
+</div>
+
+<!-- ===== 5. 数学公式 ===== -->
+<h2>5. 关键公式</h2>
+<div class="card">
+  <h3>峰值因子（Crest Factor）—— 感知的核心量</h3>
+  <div class="formula-block">$$\mathrm{CF} = \frac{\max_t |s(t)|}{\sqrt{\frac{1}{T}\int_0^T s(t)^2 dt}} = \frac{\text{峰值}}{\text{RMS}}$$</div>
+  <p>当谐波间相位对齐时（所有分量的峰值重合），CF 高 → 波形有尖刺 → <strong>可能可闻</strong>。</p>
+  <p>当相位随机时，CF 趋向于平稳随机过程的期望值 → 波形平滑 → <strong>不可闻</strong>。</p>
+
+  <h3 style="margin-top:1.2rem;">群延迟可闻阈值（Deer 1985）</h3>
+  <div class="formula-block">$$\tau_g(f) = -\frac{d\phi(f)}{d\omega}, \quad \text{峰值 }\tau_g(2\text{ kHz}) \approx 2\text{ ms 可闻（仅点击信号、耳机）}$$</div>
+</div>
+
+<p style="text-align:center;margin-top:2rem;color:var(--text2);font-size:.85rem;">
+  Sonic Atlas · 模块二交互演示 · 2026
+</p>
+
+</div>
+
+<script>
+// ========== 全局状态 ==========
+let currentDemo = 'twoTone';
+let audioCtx = null;
+
+// 二分量复合音参数
+let twoTonePhase = 0; // 三次谐波相位 (度)
+
+// 多谐波参数
+let multiHarmPhases = [0, 0, 0, 0, 0, 0]; // 谐波 2-7 的相位 (度)
+const multiHarmAmps = [0.6, 0.4, 0.3, 0.2, 0.12, 0.08]; // 谐波 2-7 的振幅
+
+// 全局相移参数
+let globalShift = 0; // 度
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+// ========== Tab 切换 ==========
+function switchDemo(mode) {
+  currentDemo = mode;
+  document.querySelectorAll('#demoTabs .tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`#demoTabs [onclick="switchDemo('${mode}')"]`).classList.add('active');
+  renderDemo();
+}
+
+// ========== Demo 渲染 ==========
+function renderKtx(container) {
+  // Direct katex.render on each .formula-block element — more reliable than auto-render
+  if (typeof katex === 'undefined') return;
+  container.querySelectorAll('.formula-block').forEach(el => {
+    let tex = el.textContent.trim();
+    // Strip surrounding $$ if present
+    if (tex.startsWith('$$') && tex.endsWith('$$')) tex = tex.slice(2, -2);
+    try {
+      katex.render(tex, el, { displayMode: true, throwOnError: false });
+    } catch(e) { console.warn('KaTeX error:', e.message, tex.slice(0,60)); }
+  });
+  // Also handle inline $...$ in regular text
+  if (typeof renderMathInElement !== 'undefined') {
+    try {
+      renderMathInElement(container, {
+        delimiters: [{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],
+        throwOnError: false
+      });
+    } catch(e) {}
+  }
+}
+
+function renderDemo() {
+  const container = document.getElementById('demoContent');
+  switch (currentDemo) {
+    case 'twoTone': renderTwoTone(container); break;
+    case 'multiHarm': renderMultiHarm(container); break;
+    case 'globalShift': renderGlobalShift(container); break;
+    case 'criticalBand': renderCriticalBand(container); break;
+  }
+  // Use rAF to ensure DOM is settled before KaTeX processing
+  requestAnimationFrame(() => renderKtx(container));
+}
+
+// ========== Demo 1: 二分量复合音 ==========
+function renderTwoTone(container) {
+  container.innerHTML = `
+    <h3>基频 200Hz + 三次谐波 600Hz — 改变谐波的相对相位</h3>
+    <div class="formula-block">$$s(t) = \\sin(2\\pi \\cdot 200t) + 0.7 \\cdot \\sin(2\\pi \\cdot 600t + \\phi)$$</div>
+    <div class="slider-group">
+      <label><span>三次谐波相位 φ</span><span><span class="val" id="twoPhaseVal">0°</span></span></label>
+      <input type="range" id="twoPhaseSlider" min="0" max="360" value="0" step="1"
+        oninput="twoTonePhase=+this.value;document.getElementById('twoPhaseVal').textContent=twoTonePhase+'°';drawTwoTone();">
+    </div>
+    <div class="grid2">
+      <div>
+        <canvas id="canvasTwoTone" height="200"></canvas>
+        <div class="meter">
+          <span class="meter-label">峰值因子 (CF)</span>
+          <span class="meter-bar" id="cfBarTwo" style="background:var(--green);width:30%;"></span>
+          <span id="cfValTwo" style="font-size:.78rem;">1.41</span>
+        </div>
+        <p style="font-size:.8rem;color:var(--text2);margin-top:.3rem;">
+          <span id="twoToneHint">0° 时谐波同步峰值重合 → CF 较高 → 波形有尖刺 → ⚠️ 可能可闻</span>
+        </p>
+      </div>
+      <div>
+        <canvas id="canvasTwoSpectrum" height="200"></canvas>
+        <p style="text-align:center;font-size:.8rem;color:var(--text2);">频谱（相位变化不影响幅度谱）</p>
+      </div>
+    </div>
+    <button class="primary" onclick="playTwoTone()">▶ 播放当前相位</button>
+    <button onclick="twoTonePhase=0;document.getElementById('twoPhaseSlider').value=0;document.getElementById('twoPhaseVal').textContent='0°';drawTwoTone();">重置 0°</button>
+    <button onclick="twoTonePhase=180;document.getElementById('twoPhaseSlider').value=180;document.getElementById('twoPhaseVal').textContent='180°';drawTwoTone();">180° 极性反转</button>
+    <p style="font-size:.8rem;color:var(--text2);margin-top:.5rem;">
+      ⚠️ <strong>使用耳机</strong> 对比 0° 和 180° 之间的差异更明显。180° 时波形完全翻转，峰值因子改变——这是 Wood 效应的核心。
+    </p>
+  `;
+  drawTwoTone();
+}
+
+function drawTwoTone() {
+  const c = document.getElementById('canvasTwoTone');
+  if (!c) return;
+  const w = c.width = c.parentElement.clientWidth - 28;
+  const h = c.height = 200;
+  const ctx = c.getContext('2d');
+  const f0 = 200;
+
+  ctx.fillStyle = '#fafafa';
+  ctx.fillRect(0,0,w,h);
+
+  // 3 个周期的 200Hz 正弦 @ 44100 SR (约 15ms)
+  const margin = {l:10, r:10, t:20, b:20};
+  const pw = w - margin.l - margin.r;
+  const ph = h - margin.t - margin.b;
+  const samples = Math.floor(0.015 * 44100);
+  const sig = new Float32Array(samples);
+  let maxAbs = 0;
+  const phi = twoTonePhase * Math.PI / 180;
+  for (let i = 0; i < samples; i++) {
+    const t = i / 44100;
+    sig[i] = Math.sin(2*Math.PI*f0*t) + 0.7 * Math.sin(2*Math.PI*3*f0*t + phi);
+    maxAbs = Math.max(maxAbs, Math.abs(sig[i]));
+  }
+
+  let sumSq = 0;
+  for (let i = 0; i < samples; i++) sumSq += sig[i]*sig[i];
+  const rms = Math.sqrt(sumSq/samples);
+  const cf = maxAbs / rms;
+
+  const midY = margin.t + ph/2;
+  const scale = ph * 0.42 / maxAbs;
+
+  // 零线
+  ctx.strokeStyle = 'rgba(0,0,0,.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(margin.l, midY); ctx.lineTo(w-margin.r, midY); ctx.stroke();
+
+  // 波形
+  ctx.beginPath();
+  ctx.strokeStyle = 'var(--accent)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < samples; i++) {
+    const x = margin.l + i / samples * pw;
+    const y = midY - sig[i] * scale;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // 峰值因子
+  const cfEl = document.getElementById('cfBarTwo');
+  const cfValEl = document.getElementById('cfValTwo');
+  const hintEl = document.getElementById('twoToneHint');
+  if (cfEl) { cfEl.style.width = Math.min(100, cf / 3 * 100) + '%'; }
+  if (cfValEl) { cfValEl.textContent = cf.toFixed(2); }
+  if (hintEl) {
+    const near180 = Math.abs(twoTonePhase - 180) < 15 || Math.abs(twoTonePhase - 180) > 345;
+    if (near180) {
+      hintEl.innerHTML = '~180° 极性反转 → CF=' + cf.toFixed(2) + ' → ⚠️ <strong>耳机条件下可能可闻</strong>';
+    } else if (cf > 1.70) {
+      hintEl.innerHTML = 'CF=' + cf.toFixed(2) + ' → 峰值高度重合 → 波形有明显尖刺 → ⚠️ <strong>可闻</strong>';
+    } else if (cf > 1.52) {
+      hintEl.innerHTML = 'CF=' + cf.toFixed(2) + ' → 峰值部分重合 → 波形有轻微尖峰 → <strong>差异较弱</strong>';
+    } else {
+      hintEl.innerHTML = 'CF=' + cf.toFixed(2) + ' → 峰值分散 → 波形平滑 → ✅ <strong>几乎不可区分</strong>';
+    }
+  }
+  if (cfEl) { cfEl.style.background = cf > 1.70 ? '#c41a1a' : cf > 1.52 ? '#b85c00' : '#1a7a2e'; }
+
+  // 频谱图
+  const c2 = document.getElementById('canvasTwoSpectrum');
+  if (!c2) return;
+  const w2 = c2.width = c2.parentElement.clientWidth - 28;
+  const h2 = c2.height;
+  const ctx2 = c2.getContext('2d');
+  ctx2.clearRect(0, 0, w2, h2);
+  ctx2.fillStyle = '#fafafa';
+  ctx2.fillRect(0, 0, w2, h2);
+
+  // baseline
+  ctx2.strokeStyle = 'rgba(0,0,0,.18)';
+  ctx2.lineWidth = 1;
+  ctx2.beginPath(); ctx2.moveTo(0, h2 - 38); ctx2.lineTo(w2, h2 - 38); ctx2.stroke();
+
+  const harmonics = [{f:200, a:1.0}, {f:600, a:0.7}];
+  const plotH = h2 - 58;
+  for (let i = 0; i < harmonics.length; i++) {
+    const barW = Math.min(28, w2 / 5);
+    const cx = w2 * (0.25 + i * 0.5);
+    const bh = harmonics[i].a * plotH;
+    ctx2.fillStyle = '#1a6dd4';
+    ctx2.fillRect(cx - barW/2, h2 - 40 - bh, barW, bh);
+    ctx2.fillStyle = '#1a1a1a';
+    ctx2.font = '11px sans-serif';
+    ctx2.textAlign = 'center';
+    ctx2.fillText(harmonics[i].f + ' Hz', cx, h2 - 10);
+    ctx2.fillText(harmonics[i].a.toFixed(1), cx, h2 - 10 - bh - 6);
+  }
+  // 标签
+  ctx2.fillStyle = '#4a4a4a';
+  ctx2.font = '11px sans-serif';
+  ctx2.textAlign = 'left';
+  ctx2.fillText('幅度谱（不随相位变化）', 6, 16);
+}
+
+function playTwoTone() {
+  const ctx = getAudioCtx();
+  const dur = 1.5;
+  const sr = ctx.sampleRate;
+  const N = Math.floor(dur * sr);
+  const buf = ctx.createBuffer(1, N, sr);
+  const data = buf.getChannelData(0);
+  const f0 = 200;
+  const phi = twoTonePhase * Math.PI / 180;
+  for (let i = 0; i < N; i++) {
+    const t = i / sr;
+    const env = Math.exp(-t * 1.5) * 0.3;
+    data[i] = env * (Math.sin(2*Math.PI*f0*t) + 0.7 * Math.sin(2*Math.PI*3*f0*t + phi));
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start();
+}
+
+// ========== Demo 2: 多谐波复合音 ==========
+function renderMultiHarm(container) {
+  let rows = '';
+  for (let k = 2; k <= 7; k++) {
+    rows += `
+      <div class="slider-group" style="margin:.2rem 0;">
+        <label><span>谐波 ${k}（${k*200}Hz, 振幅 ${multiHarmAmps[k-2].toFixed(2)}）相位</span><span><span class="val" id="mhPhase${k}Val">0°</span></span></label>
+        <input type="range" id="mhPhase${k}" min="0" max="360" value="0" step="1"
+          oninput="multiHarmPhases[${k-2}]=+this.value;document.getElementById('mhPhase${k}Val').textContent=multiHarmPhases[${k-2}]+'°';drawMultiHarm();">
+      </div>`;
+  }
+  container.innerHTML = `
+    <h3>基频 200Hz + 谐波 2–7 — 独立控制每个谐波的相位</h3>
+    <div class="formula-block">$$s(t) = \\sin(2\\pi \\cdot 200t) + \\sum_{k=2}^{7} A_k \\sin(2\\pi \\cdot k \\cdot 200t + \\phi_k)$$</div>
+    <div class="grid2">
+      <div>
+        ${rows}
+      </div>
+      <div>
+        <canvas id="canvasMultiHarm" height="220"></canvas>
+        <canvas id="canvasMultiSpec" height="100"></canvas>
+        <div class="meter">
+          <span class="meter-label">峰值因子 (CF)</span>
+          <span class="meter-bar" id="cfBarMulti" style="background:var(--green);width:25%;"></span>
+          <span id="cfValMulti" style="font-size:.78rem;">1.80</span>
+        </div>
+        <p id="multiHint" style="font-size:.8rem;color:var(--text2);margin-top:.3rem;">
+          N=7 谐波 → CF 受 CLT 约束 → 相位变化对 CF 的影响有限
+        </p>
+      </div>
+    </div>
+    <button class="primary" onclick="playMultiHarm()">▶ 播放当前相位</button>
+    <button onclick="randomizeMultiPhases();">🎲 随机化所有相位</button>
+    <button onclick="alignMultiPhases();">↺ 全部归零（对齐相位）</button>
+    <p style="font-size:.8rem;color:var(--text2);margin-top:.5rem;">
+      对比 <strong>"全部归零"</strong> 和 <strong>"随机化"</strong>——波形细节剧烈变化，但峰值因子变化小（CLT 平滑效应）→ 听感几乎无差异。
+      谐波越多（N 越大），差异越小。
+    </p>
+    <div class="formula-block">$$\\text{CLT}: \\quad \\sum_{k=1}^{N} X_k \\;\\xrightarrow{N \\to \\infty}\\; \\mathcal{N}\\!\\Bigl(0, \\sum \\sigma_k^2\\Bigr)$$</div>
+    <p style="text-align:center;font-size:.82rem;color:var(--text2);">
+      大量独立谐波的随机相位之和 → Gaussian 包络 → 感知不可区分
+    </p>
+  `;
+  drawMultiHarm();
+}
+
+function randomizeMultiPhases() {
+  for (let k = 2; k <= 7; k++) {
+    multiHarmPhases[k-2] = Math.floor(Math.random() * 360);
+    const slider = document.getElementById('mhPhase'+k);
+    const val = document.getElementById('mhPhase'+k+'Val');
+    if (slider) slider.value = multiHarmPhases[k-2];
+    if (val) val.textContent = multiHarmPhases[k-2] + '°';
+  }
+  drawMultiHarm();
+}
+
+function alignMultiPhases() {
+  for (let k = 2; k <= 7; k++) {
+    multiHarmPhases[k-2] = 0;
+    const slider = document.getElementById('mhPhase'+k);
+    const val = document.getElementById('mhPhase'+k+'Val');
+    if (slider) slider.value = 0;
+    if (val) val.textContent = '0°';
+  }
+  drawMultiHarm();
+}
+
+function drawMultiHarm() {
+  const c = document.getElementById('canvasMultiHarm');
+  if (!c) return;
+  const w = c.width = c.parentElement.clientWidth - 28;
+  const h = c.height = 220;
+  const ctx = c.getContext('2d');
+  const f0 = 200;
+
+  ctx.fillStyle = '#fafafa';
+  ctx.fillRect(0,0,w,h);
+
+  const margin = {l:10, r:10, t:20, b:20};
+  const pw = w - margin.l - margin.r;
+  const ph = h - margin.t - margin.b;
+  const samples = Math.floor(0.02 * 44100);
+  const sig = new Float32Array(samples);
+  let maxAbs = 0;
+  for (let i = 0; i < samples; i++) {
+    const t = i / 44100;
+    let val = Math.sin(2*Math.PI*f0*t);
+    for (let k = 2; k <= 7; k++) {
+      const phi = multiHarmPhases[k-2] * Math.PI / 180;
+      val += multiHarmAmps[k-2] * Math.sin(2*Math.PI*k*f0*t + phi);
+    }
+    sig[i] = val;
+    maxAbs = Math.max(maxAbs, Math.abs(val));
+  }
+
+  let sumSq = 0;
+  for (let i = 0; i < samples; i++) sumSq += sig[i]*sig[i];
+  const rms = Math.sqrt(sumSq/samples);
+  const cf = maxAbs / rms;
+
+  const midY = margin.t + ph/2;
+  const scale = ph * 0.44 / maxAbs;
+
+  ctx.strokeStyle = 'rgba(0,0,0,.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(margin.l, midY); ctx.lineTo(w-margin.r, midY); ctx.stroke();
+
+  ctx.beginPath();
+  ctx.strokeStyle = 'var(--accent)';
+  ctx.lineWidth = 1.8;
+  for (let i = 0; i < samples; i++) {
+    const x = margin.l + i / samples * pw;
+    const y = midY - sig[i] * scale;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  const cfEl = document.getElementById('cfBarMulti');
+  const cfValEl = document.getElementById('cfValMulti');
+  const hintEl = document.getElementById('multiHint');
+  if (cfEl) { cfEl.style.width = Math.min(100, cf / 3.5 * 100) + '%'; }
+  if (cfValEl) { cfValEl.textContent = cf.toFixed(2); }
+  if (cfEl) { cfEl.style.background = cf > 2.5 ? '#c41a1a' : cf > 2.1 ? '#b85c00' : '#1a7a2e'; }
+  if (hintEl) {
+    const aligned = multiHarmPhases.filter(p => p < 15 || p > 345).length;
+    const desc = aligned >= 5 ? '几乎所有谐波对齐 → ' : aligned >= 3 ? aligned + '/6 谐波对齐 → ' : aligned >= 1 ? '仅 ' + aligned + '/6 谐波对齐 → ' : '全部随机化 → ';
+    if (cf > 2.5) {
+      hintEl.innerHTML = desc + 'CF=' + cf.toFixed(2) + ' → 峰值高度重合 → ⚠️ <strong>可闻</strong>';
+    } else if (cf > 2.1) {
+      hintEl.innerHTML = desc + 'CF=' + cf.toFixed(2) + ' → 峰值部分重合 → <strong>差异较弱</strong>';
+    } else if (cf > 1.9) {
+      hintEl.innerHTML = desc + 'CF=' + cf.toFixed(2) + ' → CLT 平滑生效 → 差异渐小';
+    } else {
+      hintEl.innerHTML = desc + 'CF=' + cf.toFixed(2) + ' → CLT 充分平滑 → ✅ <strong>几乎不可区分</strong>';
+    }
+  }
+
+  // 幅度谱
+  const cs = document.getElementById('canvasMultiSpec');
+  if (cs) {
+    const ws = cs.width = cs.parentElement.clientWidth - 28;
+    const hs = cs.height;
+    const ctxs = cs.getContext('2d');
+    ctxs.clearRect(0, 0, ws, hs);
+    ctxs.fillStyle = '#fafafa';
+    ctxs.fillRect(0, 0, ws, hs);
+    ctxs.strokeStyle = 'rgba(0,0,0,.18)';
+    ctxs.lineWidth = 1;
+    ctxs.beginPath(); ctxs.moveTo(0, hs - 33); ctxs.lineTo(ws, hs - 33); ctxs.stroke();
+    const amps = [1.0, ...multiHarmAmps];
+    const plotH = hs - 45;
+    for (let k = 0; k < 7; k++) {
+      const barW = Math.min(20, ws / 16);
+      const cx = ws * (0.5 / 7 + k / 7);
+      const bh = amps[k] * plotH;
+      ctxs.fillStyle = '#1a6dd4';
+      ctxs.fillRect(cx - barW/2, hs - 35 - bh, barW, bh);
+      ctxs.fillStyle = '#1a1a1a';
+      ctxs.font = '9px sans-serif';
+      ctxs.textAlign = 'center';
+      ctxs.fillText((k===0?200:(k+1)*200)+'Hz', cx, hs - 8);
+    }
+    ctxs.fillStyle = '#4a4a4a';
+    ctxs.font = '10px sans-serif';
+    ctxs.textAlign = 'left';
+    ctxs.fillText('幅度谱（不随相位变化）', 6, 13);
+  }
+}
+
+function playMultiHarm() {
+  const ctx = getAudioCtx();
+  const dur = 1.5;
+  const sr = ctx.sampleRate;
+  const N = Math.floor(dur * sr);
+  const buf = ctx.createBuffer(1, N, sr);
+  const data = buf.getChannelData(0);
+  const f0 = 200;
+  for (let i = 0; i < N; i++) {
+    const t = i / sr;
+    const env = Math.exp(-t * 1.2) * 0.2;
+    let val = Math.sin(2*Math.PI*f0*t);
+    for (let k = 2; k <= 7; k++) {
+      const phi = multiHarmPhases[k-2] * Math.PI / 180;
+      val += multiHarmAmps[k-2] * Math.sin(2*Math.PI*k*f0*t + phi);
+    }
+    data[i] = env * val;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start();
+}
+
+// ========== Demo 3: 全局常数相移 ==========
+function renderGlobalShift(container) {
+  container.innerHTML = `
+    <h3>Krishnan &amp; Condit-Schultz (2025) 实验 — 全局常数相移 θ 对所有频率分量同时施加</h3>
+    <div class="formula-block">$$s_\\theta(t) = \\sum_{k} A_k \\sin(2\\pi f_k t + \\theta), \\quad \\theta \\in [0, {360^\\circ})$$</div>
+    <div class="slider-group">
+      <label><span>全局相移 θ</span><span><span class="val" id="gsPhaseVal">0°</span></span></label>
+      <input type="range" id="gsPhaseSlider" min="0" max="360" value="0" step="1"
+        oninput="globalShift=+this.value;document.getElementById('gsPhaseVal').textContent=globalShift+'°';drawGlobalShift();">
+    </div>
+    <div class="grid2">
+      <div>
+        <canvas id="canvasGlobalShift" height="220"></canvas>
+        <div class="meter">
+          <span class="meter-label">峰值因子 (CF)</span>
+          <span class="meter-bar" id="cfBarGS" style="background:#1a7a2e;width:30%;"></span>
+          <span id="cfValGS" style="font-size:.78rem;">—</span>
+        </div>
+        <p style="font-size:.8rem;color:var(--text2);text-align:center;margin-top:.3rem;">
+          <span id="gsHint">θ=0° 与 θ=任意角度 → 波形发生巨大变化（肉眼清晰可见）</span>
+        </p>
+      </div>
+      <div>
+        <canvas id="canvasGlobalSpec" height="220"></canvas>
+        <p style="font-size:.8rem;color:var(--text2);text-align:center;margin-top:.3rem;">
+          幅度谱完全不变（相位操作不影响）→ <strong>听感完全不可区分！</strong>
+        </p>
+      </div>
+    </div>
+    <button class="primary" onclick="playGlobalShift()">▶ 播放 θ=0°</button>
+    <button class="primary" onclick="playGlobalShift(globalShift)">▶ 播放 θ=<span id="gsPlayLabel">0°</span></button>
+    <p style="font-size:.8rem;color:var(--text2);margin-top:.5rem;padding:.5rem;background:rgba(26,122,46,.08);border-radius:6px;">
+      🎯 <strong>关键发现</strong>：虽然波形在屏幕上剧烈改变（肉眼可见！），但<span class="highlight">耳朵无法区分两个版本</span>。
+      CF 在所有 θ 下几乎不变（N=15 → CLT 平滑）→ 验证了 Krishnan &amp; Condit-Schultz (2025) 实验的核心结论。此特性已被成功用于神经网络的<strong>数据增强</strong>。
+    </p>
+  `;
+  drawGlobalShift();
+}
+
+function drawGlobalShift() {
+  const c = document.getElementById('canvasGlobalShift');
+  if (!c) return;
+  const w = c.width = c.parentElement.clientWidth - 28;
+  const h = c.height = 220;
+  const ctx = c.getContext('2d');
+
+  // 构造一个含 15 个频率分量的信号
+  const freqs = [100, 150, 200, 250, 300, 400, 500, 700, 900, 1200, 1600, 2000, 2500, 3200, 4000];
+  const amps = [0.5, 0.4, 0.7, 0.3, 0.25, 0.35, 0.2, 0.15, 0.12, 0.1, 0.08, 0.06, 0.05, 0.04, 0.03];
+
+  ctx.fillStyle = '#fafafa';
+  ctx.fillRect(0,0,w,h);
+
+  const margin = {l:10, r:10, t:20, b:20};
+  const pw = w - margin.l - margin.r;
+  const ph = h - margin.t - margin.b;
+  const samples = 600;
+  const midY = margin.t + ph/2;
+
+  // 绘制波形
+  const phi = globalShift * Math.PI / 180;
+  const sig = new Float32Array(samples);
+  let maxAbs = 0;
+  for (let i = 0; i < samples; i++) {
+    const t = i / samples * 0.02;
+    let val = 0;
+    for (let k = 0; k < freqs.length; k++) {
+      val += amps[k] * Math.sin(2*Math.PI*freqs[k]*t + phi);
+    }
+    sig[i] = val;
+    maxAbs = Math.max(maxAbs, Math.abs(val));
+  }
+
+  const scale = ph * 0.45 / maxAbs;
+
+  ctx.strokeStyle = 'rgba(0,0,0,.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(margin.l, midY); ctx.lineTo(w-margin.r, midY); ctx.stroke();
+
+  // 参考波形 (θ=0)
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(0,0,0,.2)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 6]);
+  for (let i = 0; i < samples; i++) {
+    const t = i / samples * 0.02;
+    let val = 0;
+    for (let k = 0; k < freqs.length; k++) {
+      val += amps[k] * Math.sin(2*Math.PI*freqs[k]*t);
+    }
+    const x = margin.l + i / samples * pw;
+    const y = midY - val * scale;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 当前波形 (θ=globalShift)
+  ctx.beginPath();
+  ctx.strokeStyle = globalShift === 0 ? 'var(--accent)' : 'var(--red)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < samples; i++) {
+    const x = margin.l + i / samples * pw;
+    const y = midY - sig[i] * scale;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // 图例
+  ctx.fillStyle = 'rgba(0,0,0,.4)';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('— 参考 (θ=0°)', margin.l+5, 32);
+  ctx.fillStyle = globalShift === 0 ? 'var(--accent)' : 'var(--red)';
+  ctx.fillText('— 当前 (θ='+globalShift+'°)', margin.l+130, 32);
+
+  // CF 计算
+  let sumSqGS = 0;
+  for (let i = 0; i < samples; i++) sumSqGS += sig[i]*sig[i];
+  const rmsGS = Math.sqrt(sumSqGS/samples);
+  const cfGS = maxAbs / rmsGS;
+
+  const cfBarEl = document.getElementById('cfBarGS');
+  const cfValEl = document.getElementById('cfValGS');
+  if (cfBarEl) { cfBarEl.style.width = Math.min(100, cfGS / 3 * 100) + '%'; }
+  if (cfValEl) { cfValEl.textContent = cfGS.toFixed(3); }
+
+  const hintEl = document.getElementById('gsHint');
+  if (hintEl) {
+    if (globalShift === 0) hintEl.innerHTML = 'θ=0° — 原始波形（与参考完全重合）—— CF='+cfGS.toFixed(3);
+    else if (globalShift === 180) hintEl.innerHTML = 'θ=180° — 极性反转！CF='+cfGS.toFixed(3)+'（几乎不变 → CLT平滑）—— ⚠️ <strong>极不对称信号可能微弱可闻（非CF效应）</strong>';
+    else hintEl.innerHTML = 'θ='+globalShift+'° — 波形大幅变化（肉眼可见！），但 CF='+cfGS.toFixed(3)+'（几乎不变 → CLT平滑） → <strong>耳朵无法区分</strong>';
+  }
+
+  const gsPlayLabel = document.getElementById('gsPlayLabel');
+  if (gsPlayLabel) gsPlayLabel.textContent = globalShift + '°';
+
+  // 幅度谱
+  const c2 = document.getElementById('canvasGlobalSpec');
+  if (!c2) return;
+  const w2 = c2.width = c2.parentElement.clientWidth - 28;
+  const h2 = c2.height;
+  const ctx2 = c2.getContext('2d');
+  ctx2.clearRect(0, 0, w2, h2);
+  ctx2.fillStyle = '#fafafa';
+  ctx2.fillRect(0, 0, w2, h2);
+
+  ctx2.strokeStyle = 'rgba(0,0,0,.18)';
+  ctx2.lineWidth = 1;
+  ctx2.beginPath(); ctx2.moveTo(0, h2 - 38); ctx2.lineTo(w2, h2 - 38); ctx2.stroke();
+
+  const logFreqs = freqs.map(f => Math.log2(f));
+  const minLf = Math.log2(80), maxLf = Math.log2(4500);
+  const plotW = w2 - 60;
+  const plotH = h2 - 58;
+
+  for (let k = 0; k < freqs.length; k++) {
+    const x = 30 + (logFreqs[k] - minLf) / (maxLf - minLf) * plotW;
+    const bh = (amps[k] / 0.7) * plotH;
+    ctx2.fillStyle = '#1a6dd4';
+    ctx2.fillRect(x - 2, h2 - 40 - bh, 4, Math.max(1, bh));
+  }
+  ctx2.fillStyle = '#4a4a4a';
+  ctx2.font = '11px sans-serif';
+  ctx2.textAlign = 'left';
+  ctx2.fillText('幅度谱（恒定不变——相位操作不影响！）', 6, 16);
+  ctx2.font = '10px sans-serif';
+  ctx2.textAlign = 'center';
+  for (let f of [100, 200, 500, 1000, 2000, 4000]) {
+    const x = 30 + (Math.log2(f) - minLf) / (maxLf - minLf) * plotW;
+    ctx2.fillText(f < 1000 ? f + 'Hz' : (f/1000).toFixed(0) + 'kHz', x, h2 - 8);
+  }
+}
+
+function playGlobalShift(theta) {
+  const ang = (theta !== undefined) ? theta : 0;
+  const ctx = getAudioCtx();
+  const dur = 1.5;
+  const sr = ctx.sampleRate;
+  const N = Math.floor(dur * sr);
+  const buf = ctx.createBuffer(1, N, sr);
+  const data = buf.getChannelData(0);
+
+  const freqs = [100, 150, 200, 250, 300, 400, 500, 700, 900, 1200, 1600, 2000, 2500, 3200, 4000];
+  const amps = [0.5, 0.4, 0.7, 0.3, 0.25, 0.35, 0.2, 0.15, 0.12, 0.1, 0.08, 0.06, 0.05, 0.04, 0.03];
+  const phi = ang * Math.PI / 180;
+
+  for (let i = 0; i < N; i++) {
+    const t = i / sr;
+    const env = Math.exp(-t * 0.8) * 0.15;
+    let val = 0;
+    for (let k = 0; k < freqs.length; k++) {
+      val += amps[k] * Math.sin(2*Math.PI*freqs[k]*t + phi);
+    }
+    data[i] = env * val;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start();
+}
+
+// ========== Demo 4: 临界带机制 ==========
+function renderCriticalBand(container) {
+  container.innerHTML = `
+    <h3>临界带机制——解释为什么相位差被"转换"为幅度调制</h3>
+    <div class="grid2">
+      <div class="card">
+        <h3>同一临界带内的两个纯音</h3>
+        <p>500 Hz 和 540 Hz（差 40 Hz < ERB 约 80 Hz）</p>
+        <p>耳蜗内同一位置响应 → 产生 <strong>拍频</strong>（beats）：</p>
+        <div class="formula-block">$$\\sin(2\\pi f_1 t) + \\sin(2\\pi f_2 t + \\phi) = 2\\cos(\\pi\\Delta f t - \\phi/2) \\cdot \\sin(2\\pi\\bar{f} t + \\phi/2)$$</div>
+        <p>相位差 φ 表现为 <strong>振幅调制（AM）的相位</strong>——被听觉系统作为响度起伏检测，而非"相位差"。</p>
+        <canvas id="canvasBeats" height="180"></canvas>
+      </div>
+      <div class="card">
+        <h3>不同临界带内的两个纯音</h3>
+        <p>500 Hz 和 1600 Hz（差 1100 Hz ≫ ERB~80 Hz）</p>
+        <p>耳蜗内不同位置响应 → 各自独立激活神经纤维群 → <strong>无拍频</strong> → 相位差不能被转换为 AM。</p>
+        <p>此时相位关系在两组神经纤维的发放时程中保留，但 <strong>听觉系统是否跨临界带比较相位仍是开放问题。</strong></p>
+        <canvas id="canvasNoBeats" height="180"></canvas>
+      </div>
+    </div>
+    <p style="font-size:.82rem;color:var(--text2);margin-top:.5rem;">
+      💡 <strong>关键洞察</strong>：听觉系统不"感知相位"——它将临界带内的相位差 <strong>转化为振幅调制</strong>。
+      当两个频率落在不同临界带时，相位差无法被转化为 AM——因此 <strong>不可闻</strong>。
+      这就是 Ohm-Helmholtz 法则的神经机制基础。
+    </p>
+  `;
+  setTimeout(drawCriticalBand, 100);
+}
+
+function drawCriticalBand() {
+  const c1 = document.getElementById('canvasBeats');
+  const c2 = document.getElementById('canvasNoBeats');
+  if (!c1 || !c2) return;
+
+  [c1, c2].forEach(c => {
+    c.width = c.parentElement.clientWidth - 56;
+    c.height = 180;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fafafa';
+    ctx.fillRect(0,0,c.width,c.height);
+  });
+
+  // 有拍频 (500+540)
+  const ctx1 = c1.getContext('2d');
+  const w1 = c1.width, h1 = c1.height;
+  const midY = h1/2;
+  const samples = 800;
+  let maxAbs = 0;
+  const sig1 = new Float32Array(samples);
+  for (let i = 0; i < samples; i++) {
+    const t = i / samples * 0.1;
+    sig1[i] = Math.sin(2*Math.PI*500*t) + Math.sin(2*Math.PI*540*t);
+    maxAbs = Math.max(maxAbs, Math.abs(sig1[i]));
+  }
+  const scale1 = h1 * 0.4 / maxAbs;
+  ctx1.strokeStyle = 'rgba(0,0,0,.15)'; ctx1.lineWidth = 1;
+  ctx1.beginPath(); ctx1.moveTo(0, midY); ctx1.lineTo(w1, midY); ctx1.stroke();
+  ctx1.beginPath(); ctx1.strokeStyle = 'var(--accent)'; ctx1.lineWidth = 1.8;
+  for (let i = 0; i < samples; i++) {
+    const x = i / samples * w1;
+    const y = midY - sig1[i] * scale1;
+    if (i === 0) ctx1.moveTo(x, y); else ctx1.lineTo(x, y);
+  }
+  ctx1.stroke();
+  // AM 包络
+  ctx1.beginPath(); ctx1.strokeStyle = 'var(--red)'; ctx1.lineWidth = 2;
+  for (let i = 0; i < samples; i++) {
+    const t = i / samples * 0.1;
+    const env = Math.abs(Math.cos(Math.PI*40*t));
+    const x = i / samples * w1;
+    const y = midY - env * scale1;
+    if (i === 0) ctx1.moveTo(x, y); else ctx1.lineTo(x, y);
+    ctx1.moveTo(x, midY + env * scale1); ctx1.lineTo(x, y);
+  }
+  ctx1.stroke();
+  ctx1.fillStyle = 'var(--text2)'; ctx1.font = '10px sans-serif';
+  ctx1.fillText('~40 Hz 拍频包络（AM — 可闻！）', 5, 16);
+
+  // 无拍频 (500+1600)
+  const ctx2 = c2.getContext('2d');
+  const w2 = c2.width, h2 = c2.height;
+  let maxAbs2 = 0;
+  const sig2 = new Float32Array(600);
+  for (let i = 0; i < 600; i++) {
+    const t = i / 600 * 0.01;
+    sig2[i] = Math.sin(2*Math.PI*500*t) + 0.5*Math.sin(2*Math.PI*1600*t);
+    maxAbs2 = Math.max(maxAbs2, Math.abs(sig2[i]));
+  }
+  const scale2 = h2 * 0.4 / maxAbs2;
+  ctx2.strokeStyle = 'rgba(0,0,0,.15)'; ctx2.lineWidth = 1;
+  ctx2.beginPath(); ctx2.moveTo(0, midY); ctx2.lineTo(w2, midY); ctx2.stroke();
+  ctx2.beginPath(); ctx2.strokeStyle = 'var(--accent)'; ctx2.lineWidth = 1.8;
+  for (let i = 0; i < 600; i++) {
+    const x = i / 600 * w2;
+    const y = midY - sig2[i] * scale2;
+    if (i === 0) ctx2.moveTo(x, y); else ctx2.lineTo(x, y);
+  }
+  ctx2.stroke();
+  ctx2.fillStyle = 'var(--text2)'; ctx2.font = '10px sans-serif';
+  ctx2.fillText('无拍频 → 包络恒定 → 相位差无法转化为 AM', 5, 16);
+  ctx2.fillText('（相位关系的感知状态：开放问题）', 5, 32);
+}
+
+// ========== 初始化 ==========
+renderDemo();
+window.addEventListener('resize', () => {
+  switch (currentDemo) {
+    case 'twoTone': drawTwoTone(); break;
+    case 'multiHarm': drawMultiHarm(); break;
+    case 'globalShift': drawGlobalShift(); break;
+    case 'criticalBand': drawCriticalBand(); break;
+  }
+});
+</script>
+
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, { delimiters: [{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError: false });"></script>
+
+</body>
+</html>

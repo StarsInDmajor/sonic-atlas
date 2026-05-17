@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CQT 与小波：匹配人耳的对数频谱分析</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  :root {
+    --bg: #f5f5f5; --surface: #ffffff; --border: #d0d0d0;
+    --text: #1a1a1a; --text2: #4a4a4a; --accent: #1a6dd4;
+    --green: #1a7a2e; --orange: #b85c00; --red: #c41a1a;
+    --purple: #6b21c4; --cyan: #0d7a6e;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); line-height:1.6; }
+  .container { max-width:1100px; margin:0 auto; padding:2rem 1.5rem; }
+  h1 { font-size:2rem; margin-bottom:.3rem; color:var(--text); }
+  h2 { font-size:1.35rem; color:var(--accent); margin:1.8rem 0 .8rem; padding-bottom:.3rem; border-bottom:2px solid var(--accent); }
+  h3 { font-size:1.05rem; color:var(--text); margin:1.2rem 0 .5rem; }
+  p, li { margin:.5rem 0; color:var(--text2); font-size:.92rem; }
+  ul { padding-left:1.3rem; }
+  strong { color:var(--text); }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1.2rem 1.4rem; margin:1rem 0; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:1rem 0; }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; }
+  canvas { display:block; width:100%; border-radius:6px; background:#fafafa; border:1px solid var(--border); margin:.6rem 0; }
+  .formula-block { display:block; text-align:center; padding:.7rem; margin:.6rem 0; background:rgba(26,109,212,.04); border-radius:6px; overflow-x:auto; }
+  .highlight { color:var(--green); font-weight:600; }
+  .warn { color:var(--orange); }
+  .danger { color:var(--red); }
+  .badge { display:inline-block; padding:.15rem .55rem; border-radius:10px; font-size:.75rem; font-weight:600; }
+  .badge-green { background:rgba(26,122,46,.12); color:var(--green); }
+  .badge-orange { background:rgba(184,92,0,.12); color:var(--orange); }
+  .badge-red { background:rgba(196,26,26,.12); color:var(--red); }
+
+  .slider-group { margin:.6rem 0; }
+  .slider-group label { display:flex; justify-content:space-between; font-size:.82rem; color:var(--text2); }
+  .slider-group input[type=range] { width:100%; margin:.3rem 0; accent-color:var(--accent); }
+  .slider-group .val { color:var(--accent); font-weight:600; }
+
+  .comparison-table { width:100%; border-collapse:collapse; margin:.8rem 0; font-size:.88rem; }
+  .comparison-table th { background:var(--surface); color:var(--text); padding:.5rem .8rem; text-align:left; border-bottom:2px solid var(--border); }
+  .comparison-table td { padding:.45rem .8rem; border-bottom:1px solid var(--border); color:var(--text2); }
+  .comparison-table tr:hover td { background:rgba(26,109,212,.04); }
+
+  .tabs { display:flex; gap:.3rem; margin-bottom:.8rem; }
+  .tab { padding:.4rem 1rem; border:1px solid var(--border); border-radius:6px 6px 0 0; background:var(--surface); color:var(--text2); cursor:pointer; font-size:.85rem; transition:all .15s; }
+  .tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .tab:hover:not(.active) { background:rgba(26,109,212,.08); }
+
+  .legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin:.4rem 0; font-size:.8rem; }
+  .legend span { display:flex; align-items:center; gap:.3rem; }
+  .legend .dot { display:inline-block; width:10px; height:10px; border-radius:50%; }
+
+  @media (max-width:768px) { .grid2,.grid3 { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>CQT 与小波：匹配人耳的频谱分析</h1>
+<p>为什么 FFT 的等带宽 bin 与人耳错配，而恒定 Q 变换（CQT）与小波如何解决这个问题。</p>
+
+<!-- ===== 1. 核心问题 ===== -->
+<h2>1. 核心矛盾：等带宽 bin vs. 对数感知</h2>
+<div class="grid2">
+  <div class="card">
+    <h3>人耳的频率感知是<strong>对数的</strong></h3>
+    <p>100 → 200 Hz 和 1000 → 2000 Hz <strong>听起来是同样的距离</strong>（都是八度）。</p>
+    <p>临界带宽（ERB）也随频率增长而变宽：</p>
+    <ul>
+      <li>100 Hz 处 ERB ≈ <span class="highlight">35 Hz</span>（很窄）</li>
+      <li>1 kHz 处 ERB ≈ <span class="highlight">132 Hz</span></li>
+      <li>5 kHz 处 ERB ≈ <span class="highlight">668 Hz</span>（很宽）</li>
+    </ul>
+    <p style="margin-top:.6rem;">耳朵天然是一个<strong>恒定 Q 分析仪</strong>——$Q = f / \Delta f \approx \text{常数}$。</p>
+  </div>
+  <div class="card">
+    <h3>标准 FFT 使用<strong>等间距 Hz bin</strong></h3>
+    <p>1024 点 FFT @ 44.1 kHz → 每个 bin 固定 <span class="warn">43 Hz</span> 宽。</p>
+    <ul>
+      <li>100 Hz 处：43 Hz bin > 35 Hz ERB <span class="badge badge-red">太粗</span></li>
+      <li>1 kHz 处：43 Hz bin < 132 Hz ERB <span class="badge badge-orange">尚可</span></li>
+      <li>5 kHz 处：43 Hz bin ≪ 668 Hz ERB <span class="badge badge-orange">过细（浪费）</span></li>
+    </ul>
+    <p style="margin-top:.6rem;">FFT 在低音区<strong>分辨率不足</strong>，在高音区<strong>维度冗余</strong>——与人耳完全错配。</p>
+  </div>
+</div>
+
+<!-- ===== 2. 交互演示: FFT vs CQT ===== -->
+<h2>2. 交互演示：FFT bin vs. CQT bin vs. 人耳临界带</h2>
+<div class="card">
+  <p>下图中三条轴分别表示不同分析方法的频率分辨率分布。<strong>拖动中心频率滑块</strong>查看各方法在该频率处的 bin 宽度与 ERB 的关系。</p>
+
+  <div class="slider-group">
+    <label><span>中心频率</span><span><span id="freqVal">1000</span> Hz</span></label>
+    <input type="range" id="freqSlider" min="50" max="10000" value="1000" step="10">
+  </div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:var(--green)"></span> 人耳 ERB（恰到好处的精度）</span>
+    <span><span class="dot" style="background:var(--red)"></span> FFT 固定 43 Hz bin</span>
+    <span><span class="dot" style="background:var(--accent)"></span> CQT 对数 bin（每八度 24 bins）</span>
+    <span><span class="dot" style="background:var(--purple)"></span> 小波（连续尺度）</span>
+  </div>
+  <canvas id="canvasBinComp" height="320"></canvas>
+  <p style="text-align:center;font-size:.8rem;color:var(--text2);margin-top:.4rem;">
+    当前频率 <strong id="freqLabel">1000 Hz</strong>：ERB=<strong id="erbLabel" class="highlight">132 Hz</strong>，
+    FFT bin=<strong id="fftLabel" class="warn">43 Hz</strong>，
+    CQT bin=<strong id="cqtLabel" class="highlight">43 Hz</strong>
+  </p>
+</div>
+
+<!-- ===== 3. 时频分辨率 Heisenberg 盒 ===== -->
+<h2>3. 时频分辨率的本质：Heisenberg-Gabor 不确定性</h2>
+<div class="card">
+  <p>每个分析"原子"在时频平面上占据一个确定的<strong>最小面积</strong>：</p>
+  <div class="formula-block">$$\Delta t \cdot \Delta f \geq \frac{1}{4\pi}$$</div>
+  <p>不同分析方法在时频平面上画出的<strong>Heisenberg 盒</strong>形状不同：</p>
+
+  <canvas id="canvasHeisenberg" height="340"></canvas>
+
+  <div class="grid3" style="margin-top:.8rem;">
+    <div><strong style="color:var(--red)">FFT / STFT</strong><br><span style="font-size:.82rem;color:var(--text2);">固定矩形盒——所有频率处时间、频率分辨率相同。低音区Δt太短（Δf太粗），高音区Δf太细（Δt太长）。</span></div>
+    <div><strong style="color:var(--accent)">CQT</strong><br><span style="font-size:.82rem;color:var(--text2);">盒宽与频率成正比——低音区长Δt(高Δf精度)，高音区短Δt(高时间精度)。恰好匹配听觉。</span></div>
+    <div><strong style="color:var(--purple)">连续小波</strong><br><span style="font-size:.82rem;color:var(--text2);">盒连续变化——每个尺度有最优Δt-Δf平衡。Gabor 小波达到等号(=1/4π)。</span></div>
+  </div>
+</div>
+
+<!-- ===== 4. CQT vs FFT 声谱图对比 ===== -->
+<h2>4. 模拟声谱图对比：一段扫频 + 瞬态信号</h2>
+<div class="card">
+  <p>模拟信号：低频(150Hz)稳态音 + 从 200Hz 扫到 8kHz 的滑音 + 一个宽带瞬态脉冲。下方展示三种分析方法的输出：</p>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('fft')">STFT (等带宽 FFT)</div>
+    <div class="tab" onclick="switchTab('cqt')">CQT (恒定 Q)</div>
+    <div class="tab" onclick="switchTab('wavelet')">小波 (连续尺度)</div>
+  </div>
+
+  <canvas id="canvasSpectrogram" height="400"></canvas>
+  <p id="specComment" style="text-align:center;font-size:.82rem;color:var(--text2);margin-top:.4rem;"></p>
+</div>
+
+<!-- ===== 5. CQT 的数学原理 ===== -->
+<h2>5. CQT 的数学原理</h2>
+<div class="card">
+  <h3>核心思想：让 bin 间距随频率等比增长</h3>
+  <p>CQT 的第 k 个频率 bin 中心为：</p>
+  <div class="formula-block">$$f_k = f_{\min} \cdot 2^{k / B}$$</div>
+  <p>其中 $B$ = 每八度的 bin 数（如 $12$ = 每半音一个独立 bin，$24$ = 每 quarter-tone）。</p>
+  <p>CQT 的关键特性——<strong>恒定 Q 值</strong>：</p>
+  <div class="formula-block">$$Q = \frac{f_k}{\Delta f_k} = \text{常数}$$</div>
+  <p>这意味着在高频端 <strong>$\Delta f$ 大（时间分辨率高，适合瞬态）</strong>，低频端 <strong>$\Delta f$ 小（频率分辨率高，适合精确音高）</strong>——恰好匹配人耳的临界带宽分布。</p>
+
+  <h3 style="margin-top:1rem;">与小波的关系</h3>
+  <p>连续小波变换（CWT）是 CQT 的连续极限：</p>
+  <div class="formula-block">$$W(a, b) = \int_{-\infty}^{\infty} s(t) \cdot \frac{1}{\sqrt{a}} \; \psi\!\left(\frac{t - b}{a}\right) dt$$</div>
+  <p>$a$ = 尺度（↔ 频率的倒数），$b$ = 平移（↔ 时间位置）。所有分析函数由<strong>单一母小波</strong>缩放而来——本质上是<strong>自相似的、跨频率的恒定 Q 分析</strong>。</p>
+</div>
+
+<!-- ===== 6. 对比表 ===== -->
+<h2>6. 三种方法对比</h2>
+<div class="card">
+<table class="comparison-table">
+  <tr><th>性质</th><th>STFT (FFT谱图)</th><th>CQT</th><th>连续小波 (CWT)</th></tr>
+  <tr><td>频率轴</td><td>等间距 Hz</td><td>等间距倍频程 (对数)</td><td>连续对数尺度</td></tr>
+  <tr><td>带宽 Δf</td><td>恒定 (如 43 Hz)</td><td>与 f 成正比</td><td>与 f 成正比</td></tr>
+  <tr><td>Q 值</td><td>随 f 变化</td><td><span class="highlight">恒定</span></td><td><span class="highlight">恒定</span></td></tr>
+  <tr><td>时间分辨率</td><td>全局恒定</td><td>低频低，高频高 ✅</td><td>自适应 ✅</td></tr>
+  <tr><td>频率分辨率</td><td>全局恒定</td><td>低频高，高频低 ✅</td><td>自适应 ✅</td></tr>
+  <tr><td>与人耳 ERB 的关系</td><td><span class="danger">错配</span></td><td><span class="highlight">大致对齐</span></td><td><span class="highlight">天然对齐</span></td></tr>
+  <tr><td>可逆性</td><td>✅ (ISTFT)</td><td>✅ (ICQT)</td><td>✅ (ICWT)</td></tr>
+  <tr><td>音乐应用</td><td>通用频谱查看</td><td><strong>和弦识别、调性分析</strong></td><td><strong>瞬态检测、降噪、稀疏编码</strong></td></tr>
+  <tr><td>计算复杂度</td><td>O(N log N)</td><td>O(N log N)</td><td>O(N²) (朴素), O(N log N) (快速算法)</td></tr>
+</table>
+</div>
+
+<!-- ===== 7. 小结 ===== -->
+<h2>7. 实质：窗口形状的自适应</h2>
+<div class="grid2">
+  <div class="card">
+    <h3>低频 = 长窗 = 高 Δf 精度</h3>
+    <p>100 Hz 的正弦波需要 ~50 ms 才能"看准"频率。CQT/小波在低频自动放宽时间窗——你能<span class="highlight">精确判断音高</span>，正如听觉系统在低频端的高频率辨别能力。</p>
+    <canvas id="canvasLowFreq" height="120"></canvas>
+  </div>
+  <div class="card">
+    <h3>高频 = 短窗 = 高 Δt 精度</h3>
+    <p>5 kHz 的瞬态脉冲只需 ~2 ms 的窗。CQT/小波在高频自动收紧时间窗——你能<span class="highlight">精确捕获起奏和瞬态</span>，正如听觉系统对打击乐的快速响应。</p>
+    <canvas id="canvasHighFreq" height="120"></canvas>
+  </div>
+</div>
+
+<p style="text-align:center;margin-top:2rem;color:var(--text2);font-size:.85rem;">
+  Sonic Atlas · 模块三补充演示 · 2026
+</p>
+
+</div>
+
+<script>
+// ==================== 全局工具函数 ====================
+// 亮色主题下的 canvas 配置
+const CANVAS_BG = '#fafafa';
+const CANVAS_GRID = 'rgba(0,0,0,.07)';
+const CANVAS_GRID_LIGHT = 'rgba(0,0,0,.04)';
+const CANVAS_TEXT = '#4a4a4a';
+const CANVAS_TEXT_BOLD = '#1a1a1a';
+const CANVAS_TICK = 'rgba(0,0,0,.08)';
+const CANVAS_CURSOR = 'rgba(0,0,0,.25)';
+
+function drawGrid(ctx, w, h, color) {
+  ctx.strokeStyle = color || CANVAS_GRID;
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < w; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+  for (let y = 0; y < h; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+}
+
+// ==================== Canvas 1: Bin 宽度对比 ====================
+function drawBinComp() {
+  const c = document.getElementById('canvasBinComp');
+  const w = c.width = c.parentElement.clientWidth - 28;
+  const h = c.height = 320;
+  const ctx = c.getContext('2d');
+  const freq = +document.getElementById('freqSlider').value;
+
+  // 对数映射: 20 Hz .. 20 kHz → 0 .. w
+  function toX(f) { return w * Math.log2(f/20) / Math.log2(20000/20); }
+  // 对数映射: ~3 Hz .. ~3000 Hz → 底部 .. 顶部
+  const yLo = Math.log2(3), yHi = Math.log2(3000);
+  function toY(bw) { return h - 15 - (h-35) * ((Math.log2(Math.max(bw,3)) - yLo) / (yHi - yLo)); }
+
+  ctx.fillStyle = CANVAS_BG;
+  ctx.fillRect(0,0,w,h);
+  drawGrid(ctx,w,h);
+
+  // --- 绘制四条曲线 ---
+  // 1. ERB 曲线 (人耳临界带宽)
+  ctx.beginPath();
+  ctx.strokeStyle = 'var(--green)';
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([]);
+  let first = true;
+  for (let f = 20; f <= 20000; f *= 1.02) {
+    const erb = 24.7 * (4.37 * f/1000 + 1);
+    const x = toX(f), y = toY(erb);
+    if (x >= 0 && x <= w) {
+      if (first) { ctx.moveTo(x, y); first = false; }
+      else ctx.lineTo(x, y);
+    }
+  }
+  ctx.stroke();
+
+  // 2. CQT bin 宽度 (B=24 bins/octave → Q = 24/ln2 ≈ 34.6)
+  const Q_cqt = 24 / Math.log(2);
+  ctx.beginPath();
+  ctx.strokeStyle = 'var(--accent)';
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([6, 4]);
+  first = true;
+  for (let f = 20; f <= 20000; f *= 1.02) {
+    const bw = f / Q_cqt;
+    const x = toX(f), y = toY(bw);
+    if (x >= 0 && x <= w) {
+      if (first) { ctx.moveTo(x, y); first = false; }
+      else ctx.lineTo(x, y);
+    }
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 3. FFT 固定 bin (43 Hz, 1024-pt FFT @ 44.1kHz)
+  ctx.strokeStyle = 'var(--red)';
+  ctx.lineWidth = 2.5;
+  const fftY = toY(43);
+  ctx.beginPath();
+  ctx.moveTo(0, fftY);
+  ctx.lineTo(w, fftY);
+  ctx.stroke();
+
+  // 4. 小波尺度（连续, 类似 CQT 但连续）
+  ctx.strokeStyle = 'rgba(163,113,247,.8)';
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([8, 3]);
+  ctx.beginPath();
+  first = true;
+  for (let f = 20; f <= 20000; f *= 1.02) {
+    const bw = f / 12; // Q=12, Morlet ω₀=24: 比 CQT 更宽的带宽 → 更高的时间分辨率
+    const x = toX(f), y = toY(bw);
+    if (x >= 0 && x <= w) {
+      if (first) { ctx.moveTo(x, y); first = false; }
+      else ctx.lineTo(x, y);
+    }
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // --- 当前频率标记线 ---
+  const fx = toX(freq);
+  ctx.strokeStyle = CANVAS_CURSOR;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 6]);
+  ctx.beginPath();
+  ctx.moveTo(fx, 0);
+  ctx.lineTo(fx, h);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 标记点
+  const erbV = 24.7 * (4.37 * freq/1000 + 1);
+  const cqtV = freq / Q_cqt;
+  const wavV = freq / 12;
+  [
+    [fx, toY(erbV), 'var(--green)', 'ERB'],
+    [fx, toY(43), 'var(--red)', 'FFT'],
+    [fx, toY(cqtV), 'var(--accent)', 'CQT'],
+    [fx, toY(wavV), 'rgba(163,113,247,.8)', 'Wavelet'],
+  ].forEach(([px, py, col, label]) => {
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(px, py, 6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = CANVAS_TEXT_BOLD;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(label, px+10, py+4);
+  });
+
+  // --- 轴标签 ---
+  ctx.fillStyle = CANVAS_TEXT;
+  ctx.font = '11px sans-serif';
+  for (let f of [20,50,100,200,500,1000,2000,5000,10000,20000]) {
+    const x = toX(f);
+    if (x >= 0 && x <= w) {
+      ctx.fillText(f<1000?f+'Hz':(f/1000).toFixed(1)+'kHz', x-15, h-8);
+      ctx.fillStyle = CANVAS_TICK;
+      ctx.beginPath(); ctx.moveTo(x, h-20); ctx.lineTo(x, 15); ctx.stroke();
+      ctx.fillStyle = CANVAS_TEXT;
+    }
+  }
+  // Y轴（对数刻度）
+  for (let bw of [5,10,20,50,100,200,500,1000,2000]) {
+    const y = toY(bw);
+    if (y < 5 || y > h-5) continue;
+    ctx.fillText(bw+'Hz', 3, y+4);
+    ctx.strokeStyle = CANVAS_GRID_LIGHT;
+    ctx.beginPath(); ctx.moveTo(25, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  ctx.fillStyle = CANVAS_TEXT_BOLD;
+  ctx.font = '12px sans-serif';
+  ctx.fillText('频率 →', w-60, h-5);
+  ctx.fillText('← 带宽 Δf (Hz) →', 4, 15);
+
+  // 更新文字
+  document.getElementById('freqVal').textContent = freq;
+  document.getElementById('freqLabel').textContent = freq + ' Hz';
+  document.getElementById('erbLabel').textContent = erbV.toFixed(0) + ' Hz';
+  document.getElementById('fftLabel').textContent = '43 Hz';
+  document.getElementById('cqtLabel').textContent = cqtV.toFixed(0) + ' Hz';
+}
+
+document.getElementById('freqSlider').addEventListener('input', drawBinComp);
+
+// ==================== Canvas 2: Heisenberg 盒 ====================
+function drawHeisenberg() {
+  const c = document.getElementById('canvasHeisenberg');
+  const w = c.width = c.parentElement.clientWidth - 28;
+  const h = c.height = 340;
+  const ctx = c.getContext('2d');
+
+  ctx.fillStyle = CANVAS_BG;
+  ctx.fillRect(0,0,w,h);
+  drawGrid(ctx,w,h);
+
+  const margin = {l:50, r:20, t:30, b:40};
+  const pw = w - margin.l - margin.r;
+  const ph = h - margin.t - margin.b;
+
+  // 线性频率轴: 0 .. 8 kHz
+  function toXf(f) { return margin.l + pw * (f/8000); }
+  // 时间轴: 0 .. 100 ms
+  function toYt(t) { return margin.t + ph * (t/100); }
+
+  // 轴
+  ctx.strokeStyle = CANVAS_TEXT_BOLD;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(margin.l, margin.t); ctx.lineTo(margin.l, h-margin.b);
+  ctx.moveTo(margin.l, h-margin.b); ctx.lineTo(w-margin.r, h-margin.b);
+  ctx.stroke();
+
+  ctx.fillStyle = CANVAS_TEXT;
+  ctx.font = '11px sans-serif';
+  ctx.fillText('频率 (Hz) →', w-100, h-8);
+  ctx.save();
+  ctx.translate(12, h/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText('← 时间窗长 (ms) →', -60, 0);
+  ctx.restore();
+
+  for (let f of [500,1000,2000,4000,8000]) {
+    const x = toXf(f);
+    ctx.fillStyle = CANVAS_TEXT;
+    ctx.fillText(f+'Hz', x-15, h-margin.b+15);
+  }
+
+  // --- FFT 盒 (固定 Δf=43Hz, 固定 Δt) ---
+  for (let f of [200, 500, 1000, 2000, 4000, 7000]) {
+    const dt = 1000/43; // ~23 ms
+    const df = 43;
+    const cx = toXf(f);
+    const cy = toYt(0) + ph/2;
+    const bw = pw * (df/8000);
+    const bh = ph * (dt/100);
+    ctx.fillStyle = 'rgba(196,26,26,.35)';
+    ctx.strokeStyle = '#c41a1a';
+    ctx.lineWidth = 2.5;
+    ctx.fillRect(cx-bw/2, cy-bh/2, bw, bh);
+    ctx.strokeRect(cx-bw/2, cy-bh/2, bw, bh);
+  }
+
+  // --- CQT 盒 (Δt ∝ 1/f, Δf ∝ f) ---
+  const Q = 34;
+  for (let f of [200, 500, 1000, 2000, 4000, 7000]) {
+    const df = f / Q;
+    const dt = 1000 / df;
+    const cx = toXf(f);
+    const cy = toYt(0) + ph/2;
+    const bw = pw * (df/8000);
+    const bh = ph * (dt/100);
+    ctx.fillStyle = 'rgba(26,109,212,.35)';
+    ctx.strokeStyle = '#1a6dd4';
+    ctx.lineWidth = 2.5;
+    ctx.fillRect(cx-bw/2, cy-bh/2, bw, bh);
+    ctx.strokeRect(cx-bw/2, cy-bh/2, bw, bh);
+  }
+
+  // --- 小波盒 (连续, 面积接近 1/4π, Q=12 — 比 CQT 更宽 Δf, 更短 Δt) ---
+  const Q_wavelet = 12;
+  for (let f of [200, 500, 1000, 2000, 4000, 7000]) {
+    const df = f / Q_wavelet;
+    const dt = 1000 / df * 0.6;
+    const cx = toXf(f);
+    const cy = toYt(0) + ph/2;
+    const bw = pw * (df/8000);
+    const bh = ph * (dt/100);
+    ctx.fillStyle = 'rgba(107,33,196,.30)';
+    ctx.strokeStyle = '#6b21c4';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.fillRect(cx-bw/2, cy-bh/2, bw, bh);
+    ctx.strokeRect(cx-bw/2, cy-bh/2, bw, bh);
+    ctx.setLineDash([]);
+  }
+
+  // 图例
+  const lx = margin.l + 10, ly = margin.t + 15;
+  [
+    ['#c41a1a', 'rgba(196,26,26,.35)', 'FFT/STFT (等带宽)'],
+    ['#1a6dd4', 'rgba(26,109,212,.35)', 'CQT (恒定Q)'],
+    ['#6b21c4', 'rgba(107,33,196,.30)', '小波 (连续尺度)'],
+  ].forEach(([strokeCol, fillCol, label], i) => {
+    ctx.fillStyle = fillCol;
+    ctx.strokeStyle = strokeCol;
+    ctx.lineWidth = 2;
+    ctx.fillRect(lx + i*170, ly-9, 14, 14);
+    ctx.strokeRect(lx + i*170, ly-9, 14, 14);
+    ctx.fillStyle = CANVAS_TEXT_BOLD;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(label, lx + i*170 + 20, ly+3);
+  });
+}
+
+// ==================== Canvas 3: 声谱图对比 ====================
+let specMode = 'fft';
+
+function switchTab(mode) {
+  specMode = mode;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`[onclick="switchTab('${mode}')"]`).classList.add('active');
+  drawSpectrogram();
+}
+
+function drawSpectrogram() {
+  const c = document.getElementById('canvasSpectrogram');
+  const w = c.width = c.parentElement.clientWidth - 28;
+  const h = c.height = 400;
+  const ctx = c.getContext('2d');
+
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0,0,w,h);
+
+  const comments = {
+    'fft': 'STFT (43Hz固定bin)：低频处扫频起点与稳态150Hz混淆在同一个粗bin中，无法区分。高频区 bin 过细而时间模糊——瞬态脉冲被涂抹在多个时间帧上。',
+    'cqt': 'CQT (对数bin)：低频处150Hz稳态音和扫频清晰分离。高频处bin宽 → 时间分辨率高 → 瞬态脉冲被精确局域在2-3个时间帧内。bin间距与半音对齐，可直接读和弦。',
+    'wavelet': '连续小波：在CQT基础上更进一步——每个频率的Δt-Δf完全自适应。瞬态脉冲表现为极窄的竖直条纹（时间和频率同时高精度！）。扫频轨迹平滑连续。'
+  };
+  document.getElementById('specComment').textContent = comments[specMode];
+
+  const margin = {l:50, r:15, t:15, b:35};
+  const pw = w - margin.l - margin.r;
+  const ph = h - margin.t - margin.b;
+
+  // 时间轴 0..500ms, 对数频率轴 30..12000 Hz
+  function toX(t) { return margin.l + pw * (t/500); }
+  function toY(f) {
+    const ly = Math.log2(30), hy = Math.log2(12000);
+    return margin.t + ph * (1 - (Math.log2(f) - ly) / (hy - ly));
+  }
+
+  // 模拟生成"声谱图"数据
+  const T = 300; // 时间帧
+  const F = 300; // 频率bins
+
+  // 根据模式决定频率bin的映射
+  function freqBin(i) {
+    if (specMode === 'fft') return 30 + i * (12000-30)/F; // 线性
+    const ly = Math.log2(30), hy = Math.log2(12000);
+    return Math.pow(2, ly + (hy-ly) * i/F); // 对数（CQT/小波）
+  }
+
+  const data = new Array(T);
+  for (let t = 0; t < T; t++) {
+    data[t] = new Float32Array(F);
+    const timeMs = t * 500/T;
+
+    // 1. 150Hz 稳态音 (tone)
+    const f1 = 150;
+    const i1 = Math.round(F * (Math.log2(f1)-Math.log2(30)) / (Math.log2(12000)-Math.log2(30)));
+    if (i1 >= 0 && i1 < F) data[t][i1] += Math.max(0, 0.6 * (1 - timeMs/500));
+
+    // 2. 扫频: 200 → 8000 Hz
+    const f2 = 200 + (8000-200) * Math.pow(timeMs/500, 1.3);
+    const i2 = Math.round(F * (Math.log2(f2)-Math.log2(30)) / (Math.log2(12000)-Math.log2(30)));
+    if (i2 >= 0 && i2 < F) data[t][i2] += 0.7;
+
+    // 3. 谐波 (扫频的泛音)
+    for (let h = 2; h <= 4; h++) {
+      const fh = f2 * h;
+      const ih = Math.round(F * (Math.log2(fh)-Math.log2(30)) / (Math.log2(12000)-Math.log2(30)));
+      if (ih >= 0 && ih < F) data[t][ih] += 0.3/h;
+    }
+
+    // 4. 瞬态脉冲 @ t=350ms
+    const tp = 350;
+    const dt = Math.abs(timeMs - tp);
+    if (dt < 15) {
+      const env = Math.exp(-dt*dt/25);
+      for (let i = 0; i < F; i++) {
+        data[t][i] += env * 0.8 * (0.5 + 0.5*Math.sin(i*0.3));
+      }
+    }
+
+    // 5. 背景噪声
+    for (let i = 0; i < F; i++) {
+      data[t][i] += (Math.random() - 0.5) * 0.04;
+    }
+  }
+
+  // 根据模式做频率轴变换
+  let freqLabels = [];
+  if (specMode === 'fft') {
+    // FFT模式: 重新映射到线性频率轴
+    freqLabels = [50,100,200,500,1000,2000,5000,10000];
+  } else {
+    freqLabels = [50,100,200,500,1000,2000,5000,10000];
+  }
+
+  // 绘制
+  const imgData = ctx.createImageData(pw, ph);
+  for (let ty = 0; ty < ph; ty++) {
+    for (let tx = 0; tx < pw; tx++) {
+      const tIdx = Math.floor(tx / pw * T);
+      const fIdx = Math.floor((ph - 1 - ty) / ph * F);
+      if (tIdx >= 0 && tIdx < T && fIdx >= 0 && fIdx < F) {
+        let val;
+        if (specMode === 'fft') {
+          // FFT: 线性频率轴 → 我们当前数据是对数的, 需要近似映射
+          const ff = 30 + (ph-1-ty)/ph * (12000-30); // 目标线性频率
+          const srcIdx = Math.round(F * (Math.log2(ff)-Math.log2(30)) / (Math.log2(12000)-Math.log2(30)));
+          val = srcIdx >= 0 && srcIdx < F ? data[tIdx][Math.min(srcIdx, F-1)] : 0;
+        } else {
+          val = data[tIdx][fIdx];
+        }
+        const idx = (ty * pw + tx) * 4;
+        // 颜色映射: 黑→蓝→青→绿→黄→红→白
+        const v = Math.max(0, Math.min(1, val));
+        let r, g, b;
+        if (v < 0.125) { r=0; g=0; b=v*8*255; }
+        else if (v < 0.25) { r=0; g=(v-0.125)*8*255; b=255; }
+        else if (v < 0.5) { r=0; g=255; b=255-(v-0.25)*4*255; }
+        else if (v < 0.75) { r=(v-0.5)*4*255; g=255; b=0; }
+        else { r=255; g=255-(v-0.75)*4*255; b=0; }
+
+        imgData.data[idx] = r;
+        imgData.data[idx+1] = g;
+        imgData.data[idx+2] = b;
+        imgData.data[idx+3] = 255;
+      }
+    }
+  }
+  ctx.putImageData(imgData, margin.l, margin.t);
+
+  // 轴标签 (对数)
+  ctx.fillStyle = 'var(--text2)';
+  ctx.font = '10px sans-serif';
+  for (let f of freqLabels) {
+    const y = toY(f);
+    if (y >= margin.t && y <= h-margin.b) {
+      ctx.fillText(f<1000?f+'Hz':(f/1000).toFixed(0)+'kHz', 2, y+3);
+    }
+  }
+  // 时间轴
+  for (let t = 0; t <= 500; t += 100) {
+    const x = toX(t);
+    ctx.fillText(t+'ms', x-12, h-12);
+  }
+
+  ctx.fillStyle = '#ddd';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('时间 →', w-55, h-5);
+  ctx.fillText('频率', 2, margin.t-3);
+
+  // 瞬态标记线
+  const tx = toX(350);
+  ctx.strokeStyle = 'rgba(255,255,255,.6)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(tx, margin.t);
+  ctx.lineTo(tx, h-margin.b);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#fff';
+  ctx.font = '10px sans-serif';
+  ctx.fillText('瞬态 @350ms', tx+5, margin.t+12);
+}
+
+// ==================== Canvas 4 & 5: 窗口形状 ====================
+function drawWindowDemo(canvasId, freq, label) {
+  const c = document.getElementById(canvasId);
+  const w = c.width = c.parentElement.clientWidth - 28;
+  const h = c.height = 120;
+  const ctx = c.getContext('2d');
+
+  ctx.fillStyle = CANVAS_BG;
+  ctx.fillRect(0,0,w,h);
+
+  const margin = {l:10, r:10, t:15, b:15};
+  const pw = w - margin.l - margin.r;
+  const ph = h - margin.t - margin.b;
+
+  // 窗口函数
+  const N = pw;
+  const sig = N / (freq < 500 ? 8 : 3);
+  const center = N/2;
+
+  ctx.strokeStyle = CANVAS_GRID;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(margin.l, margin.t+ph/2); ctx.lineTo(w-margin.r, margin.t+ph/2); ctx.stroke();
+
+  // 高斯窗
+  ctx.beginPath();
+  ctx.strokeStyle = 'var(--purple)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < N; i++) {
+    const x = margin.l + i;
+    const t = (i - center) / sig;
+    const env = Math.exp(-t*t/2);
+    const osc = Math.cos(t * (freq < 500 ? 4 : 12));
+    const y = margin.t + ph/2 - env * osc * ph*0.35;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // 包络
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(107,33,196,.35)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 4]);
+  for (let i = 0; i < N; i++) {
+    const x = margin.l + i;
+    const t = (i - center) / sig;
+    const env = Math.exp(-t*t/2);
+    const y = margin.t + ph/2 - env * ph*0.35;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+    ctx.moveTo(x, margin.t + ph/2 + env * ph*0.35);
+    ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = CANVAS_TEXT_BOLD;
+  ctx.font = '11px sans-serif';
+  ctx.fillText(label + ' — 窗长 ≈ ' + (sig*2*1000/44100).toFixed(1) + ' ms', margin.l+5, margin.t+12);
+}
+
+// ==================== 响应式计算 ====================
+function resizeAll() {
+  drawBinComp();
+  drawHeisenberg();
+  drawSpectrogram();
+  drawWindowDemo('canvasLowFreq', 150, '150 Hz Gabor 小波 (低频 → 长窗)');
+  drawWindowDemo('canvasHighFreq', 5000, '5 kHz Gabor 小波 (高频 → 短窗)');
+}
+
+window.addEventListener('resize', resizeAll);
+
+// 初始绘制
+resizeAll();
+</script>
+
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, { delimiters: [{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}], throwOnError: false });"></script>
+
+</body>
+</html>

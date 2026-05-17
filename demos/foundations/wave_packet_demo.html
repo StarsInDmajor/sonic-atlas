@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>波包：Gabor 原子、小波与匹配追踪</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  :root {
+    --bg: #f5f5f5; --surface: #ffffff; --border: #d0d0d0;
+    --text: #1a1a1a; --text2: #4a4a4a; --accent: #1a6dd4;
+    --green: #1a7a2e; --orange: #b85c00; --red: #c41a1a;
+    --purple: #6b21c4; --cyan: #0d7a6e; --pink: #c41a7a;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); line-height:1.6; }
+  .container { max-width:1100px; margin:0 auto; padding:2rem 1.5rem; }
+  h1 { font-size:2rem; margin-bottom:.3rem; color:var(--text); }
+  h2 { font-size:1.35rem; color:var(--accent); margin:1.8rem 0 .8rem; padding-bottom:.3rem; border-bottom:2px solid var(--accent); }
+  h3 { font-size:1.05rem; color:var(--text); margin:1.2rem 0 .5rem; }
+  p, li { margin:.5rem 0; color:var(--text2); font-size:.92rem; }
+  ul { padding-left:1.3rem; }
+  strong { color:var(--text); }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1.2rem 1.4rem; margin:1rem 0; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:1rem 0; }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; }
+  canvas { display:block; width:100%; border-radius:6px; background:#fafafa; border:1px solid var(--border); margin:.6rem 0; }
+  .formula-block { display:block; text-align:center; padding:.7rem; margin:.6rem 0; background:rgba(26,109,212,.04); border-radius:6px; overflow-x:auto; }
+
+  .highlight { color:var(--green); font-weight:600; }
+  .warn { color:var(--orange); }
+  .danger { color:var(--red); }
+  .badge { display:inline-block; padding:.15rem .55rem; border-radius:10px; font-size:.75rem; font-weight:600; }
+  .badge-green { background:rgba(26,122,46,.12); color:var(--green); }
+  .badge-orange { background:rgba(184,92,0,.12); color:var(--orange); }
+  .badge-red { background:rgba(196,26,26,.12); color:var(--red); }
+
+  .slider-group { margin:.6rem 0; }
+  .slider-group label { display:flex; justify-content:space-between; font-size:.82rem; color:var(--text2); }
+  .slider-group input[type=range] { width:100%; margin:.3rem 0; accent-color:var(--accent); }
+  .slider-group .val { color:var(--accent); font-weight:600; }
+
+  .tabs { display:flex; gap:.3rem; margin-bottom:.8rem; flex-wrap:wrap; }
+  .tab { padding:.4rem 1rem; border:1px solid var(--border); border-radius:6px 6px 0 0; background:var(--surface); color:var(--text2); cursor:pointer; font-size:.85rem; transition:all .15s; }
+  .tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .tab:hover:not(.active) { background:rgba(26,109,212,.08); }
+
+  .legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin:.4rem 0; font-size:.8rem; }
+  .legend span { display:flex; align-items:center; gap:.3rem; }
+  .legend .dot { display:inline-block; width:10px; height:10px; border-radius:50%; }
+
+  button { padding:.45rem 1rem; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); cursor:pointer; font-size:.85rem; margin:.2rem .3rem .2rem 0; transition:all .15s; }
+  button:hover { background:rgba(26,109,212,.08); border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.primary:hover { background:rgba(26,109,212,.85); }
+
+  .comparison-table { width:100%; border-collapse:collapse; margin:.8rem 0; font-size:.88rem; }
+  .comparison-table th { background:var(--surface); color:var(--text); padding:.5rem .8rem; text-align:left; border-bottom:2px solid var(--border); }
+  .comparison-table td { padding:.45rem .8rem; border-bottom:1px solid var(--border); color:var(--text2); }
+  .comparison-table tr:hover td { background:rgba(26,109,212,.04); }
+
+  .meter { display:flex; align-items:center; gap:.5rem; margin:.3rem 0; }
+  .meter-bar { height:14px; border-radius:7px; transition:width .3s; min-width:2px; }
+  .meter-label { font-size:.78rem; color:var(--text2); min-width:110px; }
+
+  @media (max-width:768px) { .grid2,.grid3 { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>波包：Gabor 原子、小波与匹配追踪</h1>
+<p>为什么傅里叶基对瞬态信号"盲"？Gabor 原子如何成为时频平面上的最优粒子，以及匹配追踪如何用极少原子重建复杂声音。</p>
+
+<!-- ===== 1. 核心矛盾 ===== -->
+<h2>1. 傅里叶的困境：完备 ≠ 稀疏</h2>
+<div class="grid2">
+  <div class="card">
+    <h3>傅里叶正弦基的特点</h3>
+    <p>每个基函数 $\sin(2\pi f t)$ 在时间轴上 <strong>无限延展</strong>——从 $-\infty$ 到 $+\infty$ 都在振荡。</p>
+    <p>这极其适合描述：<strong style="color:var(--green)">稳态持续音</strong>（管风琴、长笛长音）。</p>
+    <p>但极其不适合描述：</p>
+    <ul>
+      <li>钢琴起奏（5–20 ms 宽带瞬态）</li>
+      <li>打击乐冲击（本质瞬态、无非稳态）</li>
+      <li>鸟鸣滑音（频率随时间快速流动）</li>
+    </ul>
+    <p>描述一个 5 ms 的瞬态需要 <strong>数千个正弦波</strong> 干涉相长——完备但极不稀疏。</p>
+  </div>
+  <div class="card">
+    <h3>Heisenberg-Gabor 不确定原理</h3>
+    <div class="formula-block">$$\Delta t \cdot \Delta f \geq \frac{1}{4\pi}$$</div>
+    <p>$\Delta t$：信号"何时"发生的精度（时间局部化）</p>
+    <p>$\Delta f$：信号的"音高"精度（频率局部化）</p>
+    <p><strong>二者的乘积有严格下限</strong>——无法同时获得极致的时间精度和频率精度。如果你需要一个精确到 1 Hz 的频谱，时间窗至少需要 ~160 ms——一个 30 ms 的瞬态事件在其内早已结束。</p>
+    <p style="margin-top:.5rem;"><span class="badge badge-orange">核心洞察</span> 傅里叶正弦基 $\Delta t=\infty$（时间完全弥散），换取 $\Delta f=0$（频率完美确定）。这是极端不平衡的。</p>
+  </div>
+</div>
+
+<!-- ===== 2. Gabor 原子交互探索 ===== -->
+<h2>2. 交互演示：Gabor 原子——最优时频局部化</h2>
+<div class="card">
+  <p>Gabor 原子是<strong>高斯窗 $\times$ 正弦波</strong>——唯一同时达到 Heisenberg 下限 ($\Delta t \cdot \Delta f = 1/4\pi$) 的函数族。调整参数观察时域波形和频谱分布如何联动变化。</p>
+
+  <div class="grid2">
+    <div>
+      <div class="slider-group">
+        <label><span>频率中心 $f_0$</span><span><span id="foVal">200</span> Hz</span></label>
+        <input type="range" id="foSlider" min="50" max="4000" value="200" step="10">
+      </div>
+      <div class="slider-group">
+        <label><span>展宽参数 $\sigma$（高斯标准差）</span><span><span id="sigVal">15</span> ms</span></label>
+        <input type="range" id="sigSlider" min="2" max="80" value="15" step="1">
+      </div>
+      <div class="slider-group">
+        <label><span>时间中心 $t_0$</span><span><span id="toVal">100</span> ms</span></label>
+        <input type="range" id="toSlider" min="50" max="200" value="100" step="1">
+      </div>
+      <div style="margin-top:.8rem;font-size:.82rem;color:var(--text2);">
+        <div>$\Delta t$ <span style="font-size:.75rem;">(有效宽度 ≈ $2\sigma$)</span>: <strong id="dtVal" class="highlight">30</strong> ms</div>
+        <div>$\Delta f$ <span style="font-size:.75rem;">(= $1/(4\pi\sigma)$)</span>: <strong id="dfVal" class="highlight">5.3</strong> Hz</div>
+        <div>$\Delta t \cdot \Delta f$: <strong id="prodVal" style="color:var(--accent)">0.080</strong> <span style="font-size:.78rem;">(= 1/(4π) ≈ 0.0796)</span></div>
+        <div>$Q = f_0 / \Delta f$: <strong id="qVal" style="color:var(--purple)">37.7</strong></div>
+        <div style="margin-top:.6rem;">
+          <div style="display:flex;align-items:center;gap:.4rem;">
+            <span style="font-size:.75rem;color:var(--accent);min-width:24px;">Δt</span>
+            <span style="flex:1;height:8px;background:rgba(26,109,212,.15);border-radius:4px;overflow:hidden;display:inline-block;">
+              <span id="barDt" style="display:block;height:100%;background:var(--accent);border-radius:4px;transition:width .2s;width:30%;"></span>
+            </span>
+            <span id="barDtVal" style="font-size:.75rem;color:var(--accent);min-width:50px;">30 ms</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:.4rem;margin-top:3px;">
+            <span style="font-size:.75rem;color:var(--purple);min-width:24px;">Δf</span>
+            <span style="flex:1;height:8px;background:rgba(107,33,196,.15);border-radius:4px;overflow:hidden;display:inline-block;">
+              <span id="barDf" style="display:block;height:100%;background:var(--purple);border-radius:4px;transition:width .2s;width:5%;"></span>
+            </span>
+            <span id="barDfVal" style="font-size:.75rem;color:var(--purple);min-width:50px;">5.3 Hz</span>
+          </div>
+          <div style="font-size:.7rem;color:var(--text2);margin-top:4px;">
+            拖动 σ ← 宽原子·高Δf精度 → 窄原子·高Δt精度
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--accent)"></span> 时域波形</span>
+        <span><span class="dot" style="background:var(--purple)"></span> 频域幅度谱</span>
+      </div>
+      <canvas id="canvasGabor" height="250"></canvas>
+      <p style="text-align:center;font-size:.8rem;color:var(--text2);margin-top:.2rem;">
+        上：时域波形（时间 0–250 ms）　下：频域幅度（0–5000 Hz）
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 3. 时频平面 Heisenberg 盒 ===== -->
+<h2>3. 时频平面上的声"粒子"</h2>
+<div class="card">
+  <p>每个 Gabor 原子在时频平面上占据一个矩形"Heisenberg 盒"——宽度 = $\Delta t$，高度 = $\Delta f$。盒面积 ≥ $1/4\pi$。下方展示了两种时频粒子的对比。</p>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchHtab('sine')">傅里叶正弦基</div>
+    <div class="tab" onclick="switchHtab('gabor')">Gabor 原子 (σ = 15 ms)</div>
+    <div class="tab" onclick="switchHtab('narrow')">窄 Gabor (σ = 3 ms)</div>
+    <div class="tab" onclick="switchHtab('wide')">宽 Gabor (σ = 50 ms)</div>
+    <div class="tab" onclick="switchHtab('constq')">恒定 Q Gabor (σ ∝ 1/f₀)</div>
+  </div>
+  <canvas id="canvasHeisenberg" height="320"></canvas>
+  <p id="hComment" style="text-align:center;font-size:.82rem;color:var(--text2);margin-top:.4rem;"></p>
+</div>
+
+<!-- ===== 4. 稀疏分解：四种方法对比 ===== -->
+<h2>4. 稀疏分解：四种方法对比</h2>
+<div class="card">
+  <p>同一段真实录音，分别用 4 种稀疏分解方法重建——<span class="highlight">同样的 K 个分量，哪种方法残余最低？</span></p>
+
+  <!-- Preset selector -->
+  <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin:.6rem 0;" id="presetButtons"></div>
+
+  <!-- Original signal + FFT spectrum -->
+  <div class="grid2">
+    <div>
+      <canvas id="canvasSignal" height="140"></canvas>
+      <p style="text-align:center;font-size:.78rem;color:var(--text2);">原始信号 (0–600 ms)</p>
+    </div>
+    <div>
+      <canvas id="canvasFFTmag" height="140"></canvas>
+      <p style="text-align:center;font-size:.78rem;color:var(--text2);">
+        FFT 幅度谱 — 活动 bin: <strong id="fftActive" style="color:var(--red);">—</strong>
+      </p>
+    </div>
+  </div>
+
+  <!-- K slider -->
+  <div style="margin:.5rem 0;padding:.5rem 1rem;background:rgba(26,109,212,.04);border-radius:6px;">
+    <div class="slider-group" style="margin:0;">
+      <label><span>分量数量 K = <span id="kVal" style="font-weight:700;">1</span></span><span style="font-size:.78rem;color:var(--text2);">拖动以改变重建用的分量数</span></label>
+      <input type="range" id="kSlider" min="1" max="50" value="1" step="1">
+    </div>
+  </div>
+
+  <!-- Residual curves — the main visualization -->
+  <div>
+    <canvas id="canvasResidCurve" height="240"></canvas>
+    <p style="text-align:center;font-size:.78rem;color:var(--text2);">
+      残余能量 vs. 分量数 K — <span style="color:#c41a1a;">■ FFT Top-K</span>
+      <span style="color:#2d7dd2;">■ FFT+Gabor混合</span>
+      <span style="color:#e6a817;">■ 频段分裂</span>
+      <span style="color:#9b59b6;">■ Gabor OMP</span>
+    </p>
+  </div>
+
+  <!-- Sparse comparison bar -->
+  <div style="margin:.5rem 0;padding:.5rem 1rem;background:rgba(26,109,212,.04);border-radius:6px;">
+    <div style="font-size:.84rem;color:var(--text);margin-bottom:.4rem;"><strong>稀疏性</strong>：残余 &lt; 5% 所需的分量数（越少越稀疏）</div>
+    <div id="sparsityBars"></div>
+  </div>
+
+  <p style="margin-top:.5rem;font-size:.78rem;color:var(--text2);">
+    <span class="badge badge-green">文献</span>
+    ① <strong>FFT Top-K</strong>: DFT 基，泛音精确落在 bin 上 (Savic 2015)
+    ② <strong>FFT+Gabor 混合</strong>: FFT 捕泛音 + Gabor OMP 捕瞬态/噪声
+    ③ <strong>频段分裂</strong>: 低/中/高频段分别用 FFT，按频段分配 K 预算
+    ④ <strong>Gabor OMP</strong>: 正交匹配追踪 (Pati et al. 1993)
+  </p>
+</div>
+
+<!-- ===== 5. 波包与小波 ===== -->
+<h2>5. 小波：对数频率的波包族</h2>
+<div class="card">
+  <p>小波变换是波包框架的特化：所有分析函数由<strong>单一母小波</strong>通过平移和缩放派生：</p>
+  <div class="formula-block">$$\psi_{a,b}(t) = \frac{1}{\sqrt{a}} \; \psi\!\left(\frac{t - b}{a}\right)$$</div>
+  <p>其中 $a$ 是尺度 (scale)，$b$ 是平移。尺度 $a$ 越大 → 频率越低、时间窗越宽（匹配低频的高频率精度需求）；$a$ 越小 → 频率越高、时间窗越窄（匹配高频的高时间精度需求）。</p>
+
+  <div class="grid2">
+    <div class="card" style="margin:0;">
+      <h3>恒定 Q 的本质</h3>
+      <p>小波带宽与中心频率成正比：$\Delta f / f = \text{常数}$。</p>
+      <p>这意味着在<strong>对数频率轴上</strong>，所有小波有相同的带宽——恰好是听觉临界带的特征。这也解释了为什么小波的<a href="cqt_wavelet_demo.html" style="color:var(--accent);">频率轴天然匹配人耳</a>。</p>
+    </div>
+    <div class="card" style="margin:0;">
+      <h3>小波 vs. STFT 的关键区别</h3>
+      <p>STFT：固定窗长 → 所有频率处 $\Delta t$ 恒定 → 低频处 $\Delta f$ 可能太粗，高频处 $\Delta t$ 可能太慢。</p>
+      <p>小波：<strong>自适应窗长</strong> → 低频长窗（高 $\Delta f$ 精度），高频短窗（高 $\Delta t$ 精度）。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 6. 四种表示方法的对比 ===== -->
+<h2>6. 四种表示方法对比</h2>
+<div class="card">
+<table class="comparison-table">
+  <tr><th>性质</th><th>傅里叶（纯正弦）</th><th>短时傅里叶（STFT）</th><th>小波（CWT）</th><th>Gabor MP（波包原子）</th></tr>
+  <tr><td>基函数</td><td>无限长正弦</td><td>有窗正弦段</td><td>缩放的小波</td><td>Gabor 原子</td></tr>
+  <tr><td>参数数/分量</td><td>2 (f, a)</td><td>2 (t, f)</td><td>2 (b, a)</td><td><span class="highlight">4 (t₀, f₀, σ, a)</span></td></tr>
+  <tr><td>频率轴</td><td>线性 Hz</td><td>线性 Hz</td><td><span class="highlight">对数</span></td><td>自适应</td></tr>
+  <tr><td>Δt·Δf</td><td>0·∞（无定义）</td><td>固定，未达下限</td><td>自适应，近下限</td><td><span class="highlight">= 1/(4π)下限</span></td></tr>
+  <tr><td>表示瞬态</td><td><span class="danger">需数千分量</span></td><td><span class="warn">窗长限制</span></td><td>可，但非最优稀疏</td><td><span class="highlight">一个原子即可</span></td></tr>
+  <tr><td>表示稳态</td><td><span class="highlight">最优</span></td><td>良好</td><td>需多个宽尺度</td><td>需宽 σ 的原子</td></tr>
+  <tr><td>稀疏性</td><td><span class="danger">最差</span></td><td>中等</td><td>较好</td><td><span class="highlight">最优</span></td></tr>
+  <tr><td>可逆性</td><td>✅ (iFFT)</td><td>✅ (iSTFT)</td><td>✅ (iCWT)</td><td>✅ (叠加原子)</td></tr>
+  <tr><td>与人耳 ERB 对齐</td><td><span class="danger">错配</span></td><td><span class="warn">错配</span></td><td><span class="highlight">天然对齐</span></td><td>可设计对齐</td></tr>
+</table>
+</div>
+
+<!-- ===== 7. 总结 ===== -->
+<h2>7. 波包作为频率的平行维度</h2>
+<div class="grid2">
+  <div class="card">
+    <h3>波包解决了什么问题？</h3>
+    <ul>
+      <li><strong>瞬态稀疏性</strong>：一个波包就能"捕获"一段时频局域的声事件</li>
+      <li><strong>对数频率匹配</strong>：小波的恒定 Q 分析匹配人类听觉</li>
+      <li><strong>自适应粒度</strong>：Gabor 原子的 $\sigma$ 参数允许根据需要选择时频局域化程度</li>
+      <li><strong>感知压缩</strong>：感知匹配追踪 (PMP) 只保留不被听觉掩蔽的原子——大幅稀疏而无感知失真</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>物理框架中的位置</h3>
+    <table class="comparison-table" style="margin:0;font-size:.82rem;">
+      <tr><th>原始四维</th><th>波包扩展</th></tr>
+      <tr><td>频率 $f$</td><td>频率中心 $f_0$</td></tr>
+      <tr><td>强度 $a$</td><td>复数振幅 $a_k$（含相位）</td></tr>
+      <tr><td>时间 $t$</td><td>时间中心 $t_0$</td></tr>
+      <tr><td>相位 $\phi$</td><td>包含在 $a_k$ 的复角中</td></tr>
+      <tr><td><span style="color:var(--purple);font-weight:600;">— (新维度)</span></td><td><span class="highlight">时频展宽 $\sigma$</span></td></tr>
+    </table>
+    <p style="margin-top:.6rem;">音乐可被表示为一个稀疏的 $(t_k, f_k, \sigma_k, a_k)$ 四元组事件序列——<strong>"声粒子"</strong>——而非连续的频率-振幅函数。</p>
+  </div>
+</div>
+
+<p style="text-align:center;margin-top:2rem;color:var(--text2);font-size:.85rem;">
+  Sonic Atlas · 模块三交互演示 · 2026
+</p>
+
+</div>
+
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+
+<script>
+// ==================== 全局工具 ====================
+const CG_BG = '#fafafa';
+const CG_GRID = 'rgba(0,0,0,.07)';
+const CG_TEXT = '#4a4a4a';
+const CG_TEXT_B = '#1a1a1a';
+
+function drawGrid(ctx, w, h, step=40) {
+  ctx.strokeStyle = CG_GRID; ctx.lineWidth = 0.5;
+  for (let x=0; x<w; x+=step) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+  for (let y=0; y<h; y+=step) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+}
+
+// ==================== Canvas: Gabor 原子交互探索 ====================
+function drawGabor() {
+  const c = document.getElementById('canvasGabor');
+  const w = c.width = c.parentElement.clientWidth - 4;
+  const h = c.height = 250;
+  const ctx = c.getContext('2d');
+  const f0 = +document.getElementById('foSlider').value;
+  const sigma = +document.getElementById('sigSlider').value / 1000; // ms → s
+  const t0 = +document.getElementById('toSlider').value / 1000;
+  const dur = 0.25; // 250 ms
+
+  // Update labels
+  document.getElementById('foVal').textContent = f0;
+  document.getElementById('sigVal').textContent = (sigma*1000).toFixed(0);
+  document.getElementById('toVal').textContent = (t0*1000).toFixed(0);
+  const dt = 2 * sigma;
+  const df = 1 / (4 * Math.PI * sigma);
+  document.getElementById('dtVal').textContent = (dt*1000).toFixed(1);
+  document.getElementById('dfVal').textContent = df.toFixed(1);
+  document.getElementById('prodVal').textContent = (dt*df).toFixed(3);
+  document.getElementById('qVal').textContent = (f0/df).toFixed(1);
+
+  // Update trade-off bars (Δt max=160ms, Δf max=40Hz for visual range)
+  document.getElementById('barDtVal').textContent = (dt*1000).toFixed(0)+' ms';
+  document.getElementById('barDfVal').textContent = df.toFixed(1)+' Hz';
+  document.getElementById('barDt').style.width = Math.min(100, dt*1000/160*100)+'%';
+  document.getElementById('barDf').style.width = Math.min(100, df/40*100)+'%';
+
+  // --- Top: time domain ---
+  const hTop = 110, yTop = 0;
+  ctx.fillStyle = CG_BG; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = CG_GRID; ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(0,hTop); ctx.lineTo(w,hTop); ctx.stroke();
+  // Separator
+  ctx.strokeStyle = 'rgba(0,0,0,.15)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,hTop); ctx.lineTo(w,hTop); ctx.stroke();
+  // Zero line
+  ctx.strokeStyle = 'rgba(0,0,0,.12)'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(0,hTop/2); ctx.lineTo(w,hTop/2); ctx.stroke();
+
+  // Draw Gabor atom in time domain
+  ctx.strokeStyle = '#1a6dd4'; ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  let first = true;
+  for (let px = 0; px < w; px++) {
+    const t = px / w * dur;
+    const gauss = Math.exp(-((t - t0) * (t - t0)) / (2 * sigma * sigma));
+    const wave = Math.cos(2 * Math.PI * f0 * (t - t0));
+    const y = hTop/2 - gauss * wave * (hTop * 0.38);
+    if (first) { ctx.moveTo(px, y); first = false; }
+    else ctx.lineTo(px, y);
+  }
+  ctx.stroke();
+
+  // Gaussian envelope
+  ctx.strokeStyle = 'rgba(26,109,212,.25)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+  ctx.beginPath();
+  first = true;
+  for (let px = 0; px < w; px++) {
+    const t = px / w * dur;
+    const gauss = Math.exp(-((t - t0) * (t - t0)) / (2 * sigma * sigma));
+    const y = hTop/2 - gauss * (hTop * 0.38);
+    if (first) { ctx.moveTo(px, y); first = false; }
+    else ctx.lineTo(px, y);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  first = true;
+  for (let px = 0; px < w; px++) {
+    const t = px / w * dur;
+    const gauss = Math.exp(-((t - t0) * (t - t0)) / (2 * sigma * sigma));
+    const y = hTop/2 + gauss * (hTop * 0.38);
+    if (first) { ctx.moveTo(px, y); first = false; }
+    else ctx.lineTo(px, y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // t0 marker
+  const t0x = t0 / dur * w;
+  ctx.strokeStyle = 'rgba(26,109,212,.4)'; ctx.lineWidth=0.8;
+  ctx.beginPath(); ctx.moveTo(t0x, 5); ctx.lineTo(t0x, hTop-5); ctx.stroke();
+
+  // Labels
+  ctx.fillStyle = CG_TEXT; ctx.font = '11px system-ui';
+  ctx.fillText('时域波形 (0–250 ms)', 6, 12);
+  ctx.fillText('t₀', t0x+4, hTop-8);
+
+  // --- Bottom: frequency domain ---
+  const hBot = h - hTop, yBotStart = hTop;
+  // Zero line
+  ctx.strokeStyle = 'rgba(0,0,0,.12)'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(0, hTop+5); ctx.lineTo(w, hTop+5); ctx.stroke();
+
+  // Draw spectrum (Gaussian centered at f0, width df)
+  const fMax = 5000;
+  ctx.strokeStyle = '#6b21c4'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  first = true;
+  for (let px = 10; px < w-10; px++) {
+    const f = px / w * fMax;
+    const spec = Math.exp(-((f - f0) * (f - f0)) / (2 * df * df));
+    const y = yBotStart + 5 - spec * (hBot - 15);
+    if (first) { ctx.moveTo(px, y); first = false; }
+    else ctx.lineTo(px, y);
+  }
+  ctx.stroke();
+
+  // Δf markers
+  const f1x = Math.max(0, (f0 - df) / fMax * w);
+  const f2x = Math.min(w, (f0 + df) / fMax * w);
+  ctx.strokeStyle = 'rgba(107,33,196,.35)'; ctx.lineWidth=0.8; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(f1x, yBotStart+5); ctx.lineTo(f1x, yBotStart+hBot-5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(f2x, yBotStart+5); ctx.lineTo(f2x, yBotStart+hBot-5); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = CG_TEXT; ctx.font = '11px system-ui';
+  ctx.fillText('频域幅度 (0–5000 Hz)', 6, yBotStart+15);
+  ctx.fillText('Δf='+df.toFixed(1)+'Hz', f1x+3, yBotStart+hBot-10);
+
+  // dB label at f0: show peak
+  ctx.fillStyle = '#6b21c4'; ctx.font = 'bold 10px system-ui';
+  ctx.fillText('f₀='+f0+'Hz', Math.min(w-90, f0/fMax*w+5), yBotStart+5+15);
+}
+drawGabor();
+document.getElementById('foSlider').addEventListener('input', drawGabor);
+document.getElementById('sigSlider').addEventListener('input', drawGabor);
+document.getElementById('toSlider').addEventListener('input', drawGabor);
+
+// ==================== Canvas: Heisenberg 盒 ====================
+let htabActive = 'sine';
+function switchHtab(name) {
+  htabActive = name;
+  const tabs = document.querySelectorAll('#canvasHeisenberg').forEach(_ => {});
+  const parent = document.querySelector('.tabs');
+  const tabEls = parent.querySelectorAll('.tab');
+  for (const t of tabEls) {
+    const txt = t.textContent.trim();
+    let match = false;
+    if (name === 'sine') match = txt.includes('傅里叶');
+    else if (name === 'gabor') match = txt.includes('σ = 15 ms');
+    else if (name === 'narrow') match = txt.includes('σ = 3 ms');
+    else if (name === 'wide') match = txt.includes('σ = 50 ms');
+    else if (name === 'constq') match = txt.includes('恒定 Q');
+    t.classList.toggle('active', match);
+  }
+  drawHeisenberg();
+}
+function drawHeisenberg() {
+  const c = document.getElementById('canvasHeisenberg');
+  const w = c.width = c.parentElement.clientWidth - 28;
+  const h = c.height = 320;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = CG_BG; ctx.fillRect(0,0,w,h);
+
+  const margin = {l:65, r:20, t:25, b:40};
+  const pw = w - margin.l - margin.r;
+  const ph = h - margin.t - margin.b;
+
+  const tMin=0, tMax=0.2; // 200 ms
+  const fMin=20, fMax=8000;
+
+  function tx(t) { return margin.l + t/tMax * pw; }
+  function fy(f) { return margin.t + ph * (1 - Math.log2(f/fMin) / Math.log2(fMax/fMin)); }
+
+  // axes
+  ctx.strokeStyle = CG_TEXT_B; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(margin.l,margin.t); ctx.lineTo(margin.l,margin.t+ph);
+  ctx.lineTo(margin.l+pw,margin.t+ph); ctx.stroke();
+
+  // axis labels
+  ctx.fillStyle = CG_TEXT; ctx.font = '11px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText('时间 t (s)', margin.l+pw/2, h-5);
+  ctx.save(); ctx.translate(12, margin.t+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText('频率 f (Hz)', 0, 0); ctx.restore();
+
+  // freq ticks
+  ctx.textAlign = 'right';
+  const fticks = [20,50,100,200,500,1000,2000,5000,8000];
+  for (const f of fticks) {
+    const y = fy(f);
+    ctx.strokeStyle = 'rgba(0,0,0,.1)'; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(margin.l-4,y); ctx.lineTo(margin.l+pw,y); ctx.stroke();
+    ctx.fillStyle = CG_TEXT; ctx.fillText(f+(f>=1000?'k':''), margin.l-7, y+4);
+  }
+  // time ticks
+  ctx.textAlign = 'center';
+  for (let t=0; t<=0.2; t+=0.05) {
+    const x = tx(t);
+    ctx.fillStyle = CG_TEXT; ctx.fillText((t*1000).toFixed(0)+'ms', x, margin.t+ph+16);
+  }
+
+  const commentEl = document.getElementById('hComment');
+
+  if (htabActive === 'sine') {
+    // Fourier sine basis: Δt → ∞ (full strip), Δf → 0 (line)
+    // Draw 3 example frequencies as horizontal strips
+    const freqs = [200,800,3000];
+    const colors = ['rgba(196,26,26,.18)','rgba(196,26,26,.22)','rgba(196,26,26,.18)'];
+    for (let i=0; i<freqs.length; i++) {
+      const f = freqs[i];
+      const y = fy(f);
+      ctx.fillStyle = colors[i];
+      ctx.fillRect(margin.l, y-1, pw, 3);
+      ctx.fillStyle = '#c41a1a';
+      ctx.fillText('sin(2π·'+f+')', margin.l+10, y+12);
+    }
+    // Draw dashed vertical line marker at t=100ms
+    ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.lineWidth=0.8; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(tx(0.1),margin.t); ctx.lineTo(tx(0.1),margin.t+ph);
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = CG_TEXT; ctx.fillText('t=100ms 处正弦波仍存在', tx(0.1)+5, margin.t+20);
+
+    commentEl.innerHTML = '傅里叶正弦基：Δf → 0（单一频率线），但 <strong style="color:var(--red);">Δt → ∞（时间完全弥散）</strong>。一个无限长的正弦波无法定位"何时"发生的声事件。';
+  } else if (htabActive === 'constq') {
+    // Constant-Q Gabor: σ ∝ 1/f₀, so Δf/f₀ = constant, Q = constant
+    // Each atom: Q_target ≈ 12.5 → Δf = f₀/12.5, σ = 1/(4π·Δf)
+    const f0vals = [200, 600, 2000, 4500];
+    const t0vals = [0.03, 0.08, 0.14, 0.18];
+    const Qtarget = 12.5;
+    const colors = ['#0d7a6e','#0d7a6e','#0d7a6e','#0d7a6e'];
+
+    for (let i = 0; i < f0vals.length; i++) {
+      const f0 = f0vals[i], tt0 = t0vals[i];
+      const sigma = 1 / (4 * Math.PI * (f0 / Qtarget));
+      const df = f0 / Qtarget;
+      const dt = 2 * sigma;
+
+      const bx = tx(tt0) - (dt/tMax*pw)/2;
+      let by = fy(f0 + df/2);
+      const bwBox = Math.max(4, dt/tMax*pw);
+      let bhBox = fy(f0 - df/2) - fy(f0 + df/2);
+
+      const MIN_BOX_H = 8;
+      if (bhBox < MIN_BOX_H) {
+        const centerY = fy(f0);
+        bhBox = MIN_BOX_H;
+        by = centerY - MIN_BOX_H/2;
+      }
+
+      // box fill - use teal color for const-Q
+      ctx.fillStyle = 'rgba(13,122,110,.15)';
+      ctx.fillRect(bx, by, bwBox, bhBox);
+      ctx.strokeStyle = '#0d7a6e'; ctx.lineWidth=1.8;
+      ctx.strokeRect(bx, by, bwBox, bhBox);
+      // center dot
+      ctx.fillStyle = '#0d7a6e';
+      ctx.beginPath(); ctx.arc(tx(tt0), fy(f0), 3.5, 0, Math.PI*2); ctx.fill();
+
+      // Δf annotation
+      const realTop = fy(f0 - df/2);
+      const realBot = fy(f0 + df/2);
+      const annotX = bx + bwBox + 6;
+      if (realBot - realTop > 2) {
+        ctx.strokeStyle = 'rgba(13,122,110,.5)'; ctx.lineWidth=1; ctx.setLineDash([2,2]);
+        ctx.beginPath(); ctx.moveTo(annotX, realTop); ctx.lineTo(annotX, realBot); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(annotX-4, realTop); ctx.lineTo(annotX+4, realTop); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(annotX-4, realBot); ctx.lineTo(annotX+4, realBot); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(13,122,110,.7)'; ctx.font='9px system-ui';
+        ctx.fillText('Δf='+df.toFixed(0)+'Hz', annotX+6, (realTop+realBot)/2+3);
+      }
+
+      // label with Q value
+      ctx.fillStyle = '#0d7a6e'; ctx.font='9px system-ui';
+      ctx.fillText((f0>=1000?(f0/1000).toFixed(1)+'k':f0)+'Hz Q≈'+f0/df.toFixed(0), tx(tt0)+6, fy(f0)-6);
+      ctx.fillText('σ='+(sigma*1000).toFixed(1)+'ms', tx(tt0)+6, fy(f0)+12);
+    }
+
+    ctx.fillStyle = CG_TEXT; ctx.font='bold 11px system-ui';
+    ctx.fillText('恒定 Q ≈ 12.5：Δf ∝ f₀ → σ ∝ 1/f₀', margin.l+10, margin.t+ph-8);
+    ctx.fillStyle = CG_TEXT; ctx.font='10px system-ui';
+    ctx.fillText('左下角注：所有盒在对数频率轴上高度相同（Δf展宽恒定）', margin.l+10, margin.t+ph+25);
+
+    commentEl.innerHTML = '恒定 Q Gabor：<strong style="color:var(--cyan);">σ 与 f₀ 成反比</strong>，保证 Q = f₀/Δf 恒定。在对数频率轴上所有盒的<strong>高度相同</strong>（Δf 的 octave 宽度恒定），时间宽度随频率升高<strong>变窄</strong>。这与<strong>人类听觉的临界带分布完全一致</strong>。<br><span style="font-size:.8rem;color:var(--text2);">→ 对应文献中建议的 <em>ERBLET 变换</em>（Necciari et al., 2013）：在 ERB 尺度上天然恒定 Q 的感知原生时频表示。Chardon et al. (2014) 将其列为 PMP 框架的后续方向。</span>';
+  } else {
+    // Gabor atom boxes
+    let sigma, desc;
+    if (htabActive === 'gabor') { sigma = 0.015; desc = 'σ=15ms：平衡的时频局域化——Δf≈5.3Hz，Δt≈30ms。适合大多数声音分析。参考：Gabor (1946) 首次提出此最优时频原子。'; }
+    else if (htabActive === 'narrow') { sigma = 0.003; desc = 'σ=3ms：窄时间窗（~6ms）—高时间精度，适合捕获瞬态，但频率弥散（Δf≈27Hz）。参考：Chardon et al. (2014) PMP 字典中最窄的窗（128 samples ≈ 3ms）。'; }
+    else { sigma = 0.05; desc = 'σ=50ms：宽时间窗（~100ms）—高频率精度（Δf≈1.6Hz），适合分析精确音高，但时间模糊。参考：Chardon et al. (2014) PMP 字典中最宽的窗（2048 samples ≈ 46ms）。'; }
+
+    const df = 1/(4*Math.PI*sigma);
+    const dt = 2*sigma;
+    const f0vals = [200, 600, 2000, 4500];
+    const t0vals = [0.03, 0.08, 0.14, 0.18];
+    const MIN_BOX_H = 10;
+
+    for (let i=0; i<f0vals.length; i++) {
+      const f0 = f0vals[i], tt0 = t0vals[i];
+      const bx = tx(tt0) - (dt/tMax*pw)/2;
+      let by = fy(f0 + df/2);
+      const bwBox = Math.max(4, dt/tMax*pw);
+      let bhBox = fy(f0 - df/2) - fy(f0 + df/2);
+
+      // enforce minimum visual height so Δf spread is always visible
+      const useMinH = bhBox < MIN_BOX_H;
+      if (useMinH) {
+        const centerY = fy(f0);
+        bhBox = MIN_BOX_H;
+        by = centerY - MIN_BOX_H/2;
+      }
+
+      // box fill
+      ctx.fillStyle = 'rgba(26,109,212,.12)';
+      ctx.fillRect(bx, by, bwBox, bhBox);
+      // box border
+      ctx.strokeStyle = '#1a6dd4'; ctx.lineWidth=1.5;
+      ctx.strokeRect(bx, by, bwBox, bhBox);
+      // center dot
+      ctx.fillStyle = '#1a6dd4';
+      ctx.beginPath(); ctx.arc(tx(tt0), fy(f0), 3.5, 0, Math.PI*2); ctx.fill();
+
+      // --- Δf spread annotation: vertical brackets protruding from box ---
+      const annotColor = 'rgba(26,109,212,.55)';
+      const annotX = bx + bwBox + 6;
+      const realTop = fy(f0 - df/2);
+      const realBot = fy(f0 + df/2);
+      const spreadH = realBot - realTop;
+
+      // only draw explicit bracket if the real spread is significantly different from min box
+      if (spreadH > 2) {
+        // draw vertical bracket extending beyond box to show real Δf extent
+        const bracketTop = realTop;
+        const bracketBot = realBot;
+        const bracketX = annotX;
+        ctx.strokeStyle = annotColor; ctx.lineWidth = 1; ctx.setLineDash([2,2]);
+        // vertical line
+        ctx.beginPath(); ctx.moveTo(bracketX, bracketTop); ctx.lineTo(bracketX, bracketBot); ctx.stroke();
+        // top tick
+        ctx.beginPath(); ctx.moveTo(bracketX-4, bracketTop); ctx.lineTo(bracketX+4, bracketTop); ctx.stroke();
+        // bottom tick
+        ctx.beginPath(); ctx.moveTo(bracketX-4, bracketBot); ctx.lineTo(bracketX+4, bracketBot); ctx.stroke();
+        ctx.setLineDash([]);
+        // Δf label
+        ctx.fillStyle = 'rgba(26,109,212,.7)'; ctx.font = '9px system-ui';
+        ctx.fillText('Δf='+df.toFixed(1)+'Hz', bracketX+6, (bracketTop+bracketBot)/2+3);
+      } else {
+        // spread is tiny: draw a simple annotation with the value
+        ctx.fillStyle = 'rgba(26,109,212,.7)'; ctx.font = '8.5px system-ui';
+        ctx.fillText('Δf='+df.toFixed(1)+'Hz', annotX, fy(f0)+3);
+      }
+
+      // label atom center
+      ctx.fillStyle = '#1a6dd4'; ctx.font = '9.5px system-ui';
+      ctx.fillText((f0>=1000?(f0/1000).toFixed(1)+'k':f0)+'Hz', tx(tt0)+6, fy(f0)-6);
+      ctx.fillText('@'+(tt0*1000).toFixed(0)+'ms', tx(tt0)+6, fy(f0)+12);
+    }
+
+    // Area annotation and key
+    ctx.fillStyle = CG_TEXT; ctx.font = 'bold 11px system-ui';
+    const areaText = '盒面积 = Δt·Δf = '+((2*sigma)*df).toFixed(3)+' ≈ 1/(4π)';
+    ctx.fillText(areaText, margin.l+10, margin.t+ph-8);
+    // legend for Δf brackets
+    ctx.fillStyle = 'rgba(26,109,212,.55)'; ctx.font = '9px system-ui';
+    ctx.setLineDash([2,2]);
+    ctx.beginPath(); ctx.moveTo(margin.l+10, margin.t+ph-22); ctx.lineTo(margin.l+24, margin.t+ph-22); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = CG_TEXT; ctx.fillText('虚线括号 = Δf 展宽', margin.l+30, margin.t+ph-17);
+
+    document.getElementById('hComment').innerHTML = 'Gabor 原子 ('+desc+') — 每个盒子代表一个原子的时频"足迹"。面积 = <strong style="color:var(--accent);">1/(4π) = 0.0796</strong>，这是 Heisenberg 不确定原理的<strong>绝对下限</strong>。';
+  }
+}
+drawHeisenberg();
+
+// ==================== 预计算数据 ====================
+const PRESET_DATA = {"piano":{"label":"\u94a2\u7434 C4 (262Hz)","s4":[2.6e-05,0.015895,0.063092,-0.161111,0.143493,0.339763,-0.167233,-0.222557,-0.475283,0.154887,0.507767,0.094239,-0.699331,-0.552186,-0.199331,0.753318,0.2857,-0.608616,-0.351492,-0.213529,0.402546,0.26448,-0.48786,0.028627,0.014609,0.353935,0.162912,-0.458719,0.17662,0.091744,0.497402,0.340175,-0.11893,-0.066718,-0.064275,0.133308,0.116358,-0.071348,-0.209877,-0.213863,-0.071451,-0.026723,-0.071142,-0.318724,0.030556,0.013709,0.117515,0.124203,-0.199023,0.165072,-0.036137,0.193699,0.215149,-0.289995,-0.014558,0.043133,0.362346,0.248817,-0.251235,-0.180298,-0.061883,0.538709,0.348791,-0.314969,-0.257279,-0.291692,0.4607,0.042078,-0.434053,-0.076157,-0.356019,0.126775,-0.027109,-0.37392,0.102829,-0.101492,0.117978,0.005658,-0.195936,-0.073045,0.149949,-0.114969,0.08714,0.096451,-0.464172,0.061163,-0.247917,0.107459,0.42716,-0.572994,0.179347,-0.098868,0.128421,0.430967,-0.259028,0.005658,-0.016461,0.146091,0.144856,-0.124717,-0.22284,-0.135468,0.352778,-0.066024,-0.021888,-0.197865,-0.217721,0.500566,-0.006327,-0.230401,-0.146116,-0.367515,0.392361,0.052778,-0.450643,-0.207587,-0.22927,0.003035,0.171836,-0.272788,-0.1241,0.115329,-0.174357,0.196373,0.070242,-0.194856,0.284979,-0.243184,0.144933,0.184799,-0.310211,0.162603,-0.221065,0.18894,0.22482,-0.330556,0.061831,-0.125206,0.31695,0.113529,-0.24429,-0.087706,-0.08966,0.281636,-0.003344,-0.209465,-0.080581,-0.047531,0.188529,0.076903,-0.065381,-0.081559,0.017978,0.130916,0.158025,-0.013092,-0.133436,0.023663,0.040612,0.081379,-0.04964,-0.202881,-0.089223,-0.041435,0.126569,-0.086343,-0.143776,-0.05427,-0.134079,0.199074,-0.019547,-0.024717,0.029604,-0.253086,0.293673,0.116718,-0.102495,0.112191,-0.186986,0.375514,0.253755,-0.198534,0.138092,-0.02055,0.275592,0.332587,-0.29249,-0.048663,0.086368,0.157407,0.153086,-0.23732,-0.219239,0.082819,0.063837,0.01376,-0.028678,-0.159594,-0.071348,0.060828,-0.012577,0.102109,-0.071271,-0.126878,0.018699,0.0509,0.039249,0.022145,-0.092798,-0.026157,0.232819,-0.000849,-0.053035,0.019882,-0.137449,0.360211,0.058848,-0.168313,0.080298,-0.189763,0.257665,0.205838,-0.23624,0.086008,-0.153292,0.15769,0.254964,-0.224306,0.014918,0.000437,0.142695,0.185777,-0.18894,-0.062551,0.067978,0.157382,0.044676,-0.122634,-0.149717,0.010159,0.067721,-0.017181,-0.070062,-0.161626,-0.042284,-0.072917,0.034619,0.072094,-0.124614,-0.017747,-0.232407,0.138477,0.188194,-0.113889,0.046348,-0.233153,0.135442,0.185082,-0.085417,0.070345,-0.105993,0.119805,0.157587,-0.090098,-0.028909,-0.033436,0.13624,0.074794,-0.099717,-0.107459,-0.059311,0.107536,0.057202,-0.080041,-0.096271,-0.126749,0.112912,0.098714,-0.061111,-0.090766,-0.079758,0.022531,0.098971,-0.022428,-0.115715,-0.035391,-0.106919,0.061343,0.063349,-0.169599,-0.016229,-0.150309,0.032022,0.101775,-0.10198,-0.045062,-0.157022,0.089969,0.106662,-0.046553,-0.078241,-0.181327,0.217052,0.106867,-0.020242,-0.00481,-0.160057,0.217953,0.147788,-0.07073,0.071451,-0.092001,0.089429,0.149331,-0.1482,-0.001929,-0.006867,-0.040998,0.134748,-0.099357,-0.124074,0.027238,-0.074769,0.092387,0.043107,-0.186137,-0.021862,-0.062912,0.066615,0.109439,-0.146142,-0.068827,-0.065972,0.068313,0.129141,-0.056662,-0.035674,-0.103627,0.108282,0.112577,-0.025772,0.031327,-0.150026,0.134928,0.095602,-0.082999,0.065972,-0.109825,0.122094,0.1384,-0.09892,0.02999,-0.025437,0.090895,0.157227,-0.062989,-0.056739,0.049614,0.019727,0.101826,0.005478,-0.102546,0.049614,-0.047299,0.025412,0.033282,-0.105787,0.017155,-0.097505,0.015046,0.038349,-0.102598,0.004552,-0.138374,0.067773,0.090484,-0.097994,0.027135,-0.135288,0.107305,0.158822,-0.06124,0.027546,-0.100103,0.094805,0.176955,-0.02073,-0.001055,-0.062294,0.073354,0.120962,0.028781,-0.037166,-0.032279,0.051312,0.055427,0.031147,-0.057587,-0.007896,0.029244],"fa":793,"fb":[{"k":97,"m":1617.987924,"p":-0.061},{"k":96,"m":1015.811538,"p":1.8728},{"k":194,"m":978.448853,"p":-0.9109},{"k":193,"m":790.165731,"p":1.3306},{"k":388,"m":728.494939,"p":1.6642},{"k":1172,"m":705.126313,"p":2.4451},{"k":291,"m":601.058162,"p":1.7512},{"k":290,"m":579.78349,"p":-2.3054},{"k":387,"m":548.553571,"p":-2.6338},{"k":680,"m":538.102945,"p":-2.9836},{"k":679,"m":472.997118,"p":-1.0818},{"k":98,"m":452.896119,"p":-0.7963},{"k":2298,"m":437.752497,"p":-2.2655},{"k":485,"m":424.757073,"p":0.9806},{"k":95,"m":419.600481,"p":1.6009},{"k":2404,"m":371.73761,"p":-1.6117},{"k":1171,"m":353.588022,"p":-1.8083},{"k":1777,"m":322.402512,"p":0.1309},{"k":1470,"m":314.441048,"p":1.2446},{"k":974,"m":301.73389,"p":-1.3464},{"k":2192,"m":301.246332,"p":-2.0806},{"k":582,"m":297.873621,"p":3.1191},{"k":1473,"m":295.086807,"p":-0.0546},{"k":1474,"m":283.98432,"p":-0.8037},{"k":2193,"m":282.160259,"p":2.6583},{"k":1173,"m":277.79925,"p":1.2079},{"k":2299,"m":271.146463,"p":2.8166},{"k":99,"m":270.355744,"p":-1.5296},{"k":1471,"m":266.472059,"p":0.2833},{"k":484,"m":263.285376,"p":3.1078},{"k":2405,"m":254.771655,"p":-2.9762},{"k":389,"m":254.350345,"p":1.2969},{"k":192,"m":247.377369,"p":1.0493},{"k":1983,"m":246.882678,"p":0.6675},{"k":876,"m":240.405583,"p":2.9695},{"k":100,"m":238.027702,"p":-1.1629},{"k":94,"m":234.615441,"p":1.8598},{"k":2297,"m":217.771907,"p":-0.647},{"k":1776,"m":214.18336,"p":1.6232},{"k":1472,"m":210.705258,"p":0.4966},{"k":1371,"m":206.832135,"p":-1.2567},{"k":1469,"m":203.36198,"p":1.8321},{"k":101,"m":186.700819,"p":-1.2424},{"k":1880,"m":185.309236,"p":0.1677},{"k":1984,"m":182.838973,"p":-0.8712},{"k":1778,"m":180.861415,"p":-0.8901},{"k":1170,"m":176.721489,"p":-2.321},{"k":195,"m":175.880959,"p":-1.3095},{"k":973,"m":175.457617,"p":0.8293},{"k":1372,"m":170.888771,"p":-2.9389},{"k":875,"m":169.52359,"p":-0.8499},{"k":289,"m":165.164025,"p":-2.7084},{"k":681,"m":162.570004,"p":2.6576},{"k":777,"m":162.567808,"p":1.3415},{"k":2300,"m":158.836288,"p":2.4496},{"k":391,"m":157.416902,"p":0.4583},{"k":91,"m":156.950204,"p":2.3142},{"k":778,"m":149.450558,"p":-0.5043},{"k":1475,"m":148.476974,"p":-1.1849},{"k":392,"m":148.35947,"p":0.6133},{"k":292,"m":148.024367,"p":1.2401},{"k":386,"m":146.34547,"p":-2.5925},{"k":1468,"m":145.737576,"p":2.0617},{"k":1457,"m":144.94869,"p":0.4311},{"k":67,"m":144.115082,"p":-0.462},{"k":2406,"m":142.927753,"p":2.9727},{"k":68,"m":140.306736,"p":-1.283},{"k":102,"m":139.891066,"p":-1.051},{"k":2194,"m":138.262104,"p":2.1028},{"k":678,"m":136.451522,"p":-1.0024},{"k":92,"m":135.648684,"p":2.4065},{"k":90,"m":132.523948,"p":2.1602},{"k":3174,"m":131.988604,"p":-3.1227},{"k":1879,"m":130.866732,"p":2.1846},{"k":93,"m":128.597991,"p":2.0261},{"k":3288,"m":128.366567,"p":1.9308},{"k":390,"m":127.229647,"p":0.6553},{"k":1476,"m":125.244666,"p":-1.2482},{"k":3287,"m":124.765879,"p":-2.9618},{"k":3175,"m":122.809562,"p":2.1183},{"k":2407,"m":119.966713,"p":2.766},{"k":2088,"m":118.196545,"p":-0.7906},{"k":1174,"m":115.688213,"p":0.4964},{"k":2295,"m":115.441378,"p":-0.6828},{"k":1985,"m":114.91824,"p":-1.4368},{"k":1477,"m":113.747444,"p":-1.3396},{"k":84,"m":113.298325,"p":2.5022},{"k":2296,"m":111.313587,"p":-2.7145},{"k":1271,"m":108.684026,"p":-2.6871},{"k":2301,"m":108.642051,"p":2.2487},{"k":396,"m":106.941006,"p":0.2628},{"k":1458,"m":106.464966,"p":-0.9403},{"k":393,"m":106.245302,"p":0.7475},{"k":1850,"m":106.230997,"p":-0.6328},{"k":198,"m":106.112009,"p":-1.9852},{"k":397,"m":105.185428,"p":-0.1364},{"k":1467,"m":103.99178,"p":2.5097},{"k":483,"m":103.983757,"p":2.8658},{"k":1272,"m":103.247591,"p":2.1248},{"k":189,"m":103.124952,"p":2.1422},{"k":106,"m":103.059751,"p":-1.5018},{"k":677,"m":102.385254,"p":-0.5796},{"k":1480,"m":102.295668,"p":-1.8489},{"k":1779,"m":101.742297,"p":-1.3711},{"k":105,"m":101.468532,"p":-1.5927},{"k":81,"m":100.14368,"p":-3.0858},{"k":1478,"m":100.130993,"p":-1.3792},{"k":395,"m":98.997315,"p":-0.0815},{"k":1479,"m":98.940785,"p":-1.6127},{"k":286,"m":98.827265,"p":-1.421},{"k":2728,"m":98.555526,"p":-3.0839},{"k":103,"m":98.207213,"p":-1.3222},{"k":2729,"m":97.685109,"p":1.87},{"k":197,"m":97.538711,"p":-2.0928},{"k":1073,"m":97.433921,"p":1.3638},{"k":287,"m":97.017061,"p":-1.1003},{"k":1573,"m":95.174433,"p":-3.0779},{"k":2944,"m":94.800661,"p":-2.7147},{"k":583,"m":94.695051,"p":1.2279},{"k":2945,"m":94.198034,"p":2.0844},{"k":2946,"m":94.195016,"p":1.2398},{"k":2195,"m":93.291289,"p":1.8984},{"k":1373,"m":92.843302,"p":2.9156},{"k":66,"m":92.780228,"p":-0.1406},{"k":2294,"m":90.495433,"p":-2.0716},{"k":85,"m":89.733425,"p":1.8665},{"k":3061,"m":89.603653,"p":3.026},{"k":2402,"m":88.490318,"p":-0.8032},{"k":2087,"m":88.166935,"p":0.5466},{"k":104,"m":87.427188,"p":-1.5322},{"k":199,"m":86.980691,"p":-1.714},{"k":111,"m":86.640025,"p":-1.3751},{"k":196,"m":86.469251,"p":-1.8353},{"k":69,"m":86.42873,"p":-1.4443},{"k":3872,"m":86.183538,"p":1.344},{"k":75,"m":85.916975,"p":-2.2976},{"k":394,"m":85.884042,"p":0.6017},{"k":1466,"m":84.259525,"p":2.7368},{"k":70,"m":83.744192,"p":-2.2809},{"k":2403,"m":83.513237,"p":-0.6974},{"k":676,"m":82.845058,"p":-0.4926},{"k":1176,"m":81.898831,"p":0.9502},{"k":2947,"m":81.624428,"p":-0.1858},{"k":675,"m":80.60725,"p":-0.2348},{"k":1780,"m":79.726866,"p":-1.6356},{"k":1849,"m":79.548849,"p":1.1225},{"k":107,"m":79.256303,"p":-1.5751},{"k":112,"m":78.883887,"p":-1.6134},{"k":398,"m":78.396367,"p":-0.2084},{"k":1175,"m":78.010501,"p":1.0828},{"k":64,"m":77.901617,"p":0.5033},{"k":3289,"m":77.544084,"p":1.0959},{"k":2408,"m":77.531131,"p":2.3841},{"k":83,"m":77.297553,"p":2.9631},{"k":63,"m":76.842246,"p":0.6555},{"k":65,"m":76.769514,"p":0.189},{"k":1456,"m":76.649338,"p":1.7472},{"k":87,"m":76.510993,"p":2.8201},{"k":3173,"m":76.186362,"p":-2.0562},{"k":683,"m":75.118394,"p":1.9609},{"k":1166,"m":75.085733,"p":-1.6269},{"k":82,"m":75.084256,"p":-3.053},{"k":80,"m":74.856396,"p":-3.069},{"k":89,"m":74.55837,"p":2.0391},{"k":2191,"m":73.879023,"p":-1.549},{"k":77,"m":73.514723,"p":-2.5333},{"k":3873,"m":73.501173,"p":0.5486},{"k":76,"m":73.159476,"p":-2.489},{"k":1481,"m":72.735008,"p":-2.2959},{"k":2302,"m":72.60289,"p":2.0247},{"k":972,"m":72.35395,"p":0.3921},{"k":674,"m":70.945096,"p":-0.0333},{"k":88,"m":70.828603,"p":2.487},{"k":86,"m":69.795902,"p":2.6782},{"k":295,"m":68.346637,"p":0.4653},{"k":486,"m":68.201188,"p":0.2127},{"k":188,"m":67.954492,"p":1.4752},{"k":2089,"m":67.399793,"p":-1.4773},{"k":399,"m":67.204421,"p":-0.4375},{"k":2401,"m":66.994928,"p":-0.7391},{"k":684,"m":66.334999,"p":2.2063},{"k":400,"m":66.055069,"p":-0.691},{"k":401,"m":65.979924,"p":-0.6949},{"k":1168,"m":65.755294,"p":-2.2366},{"k":3874,"m":65.697779,"p":0.1082},{"k":1775,"m":65.205418,"p":2.1116},{"k":200,"m":64.755809,"p":-1.903},{"k":296,"m":64.153443,"p":0.654},{"k":385,"m":63.938405,"p":-2.56},{"k":1881,"m":63.769399,"p":-1.2646},{"k":2196,"m":63.373659,"p":1.5658},{"k":2303,"m":62.784843,"p":2.0462},{"k":62,"m":62.761767,"p":0.8686},{"k":2292,"m":62.359138,"p":-1.553},{"k":4999,"m":61.821713,"p":-0.9887},{"k":580,"m":61.263301,"p":-1.3907},{"k":402,"m":60.660585,"p":-0.682},{"k":1781,"m":60.395161,"p":-1.8474},{"k":190,"m":60.3896,"p":2.6645},{"k":3992,"m":59.986431,"p":1.2951},{"k":584,"m":59.937938,"p":1.4346},{"k":4998,"m":59.919788,"p":-0.0716},{"k":61,"m":59.370323,"p":1.3576},{"k":2730,"m":59.319223,"p":1.1955},{"k":2837,"m":59.032401,"p":-0.1034},{"k":116,"m":58.50624,"p":-2.0504},{"k":1459,"m":58.444883,"p":-1.5084},{"k":187,"m":57.960429,"p":0.5313},{"k":2197,"m":57.947675,"p":1.4541},{"k":673,"m":57.62908,"p":-0.0408},{"k":581,"m":57.486265,"p":-1.2535},{"k":178,"m":57.446091,"p":1.9022},{"k":5000,"m":57.398939,"p":-1.6028},{"k":191,"m":57.366265,"p":1.1361},{"k":1482,"m":56.625285,"p":-2.081},{"k":975,"m":56.539464,"p":-2.5551},{"k":74,"m":56.428369,"p":-1.6902},{"k":2190,"m":56.369991,"p":-1.5066},{"k":1465,"m":56.327197,"p":2.964},{"k":1177,"m":55.956454,"p":0.9029},{"k":1370,"m":55.538189,"p":-0.6197},{"k":78,"m":55.223937,"p":-2.5709},{"k":79,"m":54.861046,"p":-2.8342},{"k":294,"m":54.649545,"p":0.6814},{"k":3176,"m":54.584467,"p":1.5445},{"k":262,"m":54.512505,"p":1.2368},{"k":488,"m":54.040211,"p":-0.3543},{"k":779,"m":53.989082,"p":-1.0442},{"k":1982,"m":53.865806,"p":1.812},{"k":115,"m":53.677843,"p":-2.2571},{"k":183,"m":53.338277,"p":1.4652},{"k":108,"m":53.166533,"p":-1.9328},{"k":293,"m":52.745312,"p":1.1089},{"k":3064,"m":52.70893,"p":3.0128},{"k":113,"m":52.673944,"p":-1.91},{"k":1072,"m":51.809565,"p":3.0714},{"k":1986,"m":51.803043,"p":-1.713},{"k":71,"m":51.354519,"p":-2.3291},{"k":4282,"m":51.197932,"p":0.5369},{"k":179,"m":51.080805,"p":1.9776},{"k":60,"m":51.023755,"p":2.0033},{"k":1483,"m":50.769777,"p":-2.1773},{"k":3066,"m":50.754804,"p":2.1249},{"k":2409,"m":50.701574,"p":2.2807},{"k":114,"m":50.495814,"p":-2.2548},{"k":1486,"m":50.060409,"p":-2.4774},{"k":202,"m":49.859476,"p":3.0048},{"k":182,"m":49.795612,"p":1.2472},{"k":1273,"m":49.524437,"p":1.4818},{"k":682,"m":49.343652,"p":2.2243},{"k":4281,"m":49.093584,"p":1.4456},{"k":776,"m":48.748572,"p":1.59},{"k":266,"m":48.662461,"p":0.0976},{"k":1463,"m":48.606597,"p":-2.9688},{"k":263,"m":48.383819,"p":1.067},{"k":3993,"m":48.230274,"p":0.3228},{"k":1485,"m":48.196816,"p":-2.3629},{"k":2290,"m":48.021606,"p":-1.0581},{"k":3875,"m":48.00767,"p":-0.3464},{"k":73,"m":47.81716,"p":-1.325},{"k":403,"m":47.611828,"p":-0.7901},{"k":1484,"m":47.533387,"p":-2.1659},{"k":2400,"m":47.24535,"p":-0.8366},{"k":264,"m":47.220604,"p":1.0227},{"k":2304,"m":47.208826,"p":1.8215},{"k":3065,"m":46.830958,"p":2.4692},{"k":3871,"m":46.767806,"p":2.1147},{"k":184,"m":46.63215,"p":1.8641},{"k":482,"m":46.500225,"p":2.7148},{"k":405,"m":46.2878,"p":-1.2787},{"k":879,"m":46.230645,"p":1.5056},{"k":117,"m":46.213626,"p":-2.307},{"k":142,"m":46.168345,"p":3.1184},{"k":1653,"m":45.984364,"p":0.506},{"k":1774,"m":45.900919,"p":1.9101},{"k":259,"m":45.771698,"p":2.0264},{"k":2198,"m":45.708395,"p":1.1861},{"k":2188,"m":45.640988,"p":-1.4564},{"k":3062,"m":45.26792,"p":1.7914},{"k":2410,"m":45.088548,"p":2.2291},{"k":261,"m":44.718979,"p":1.7884},{"k":282,"m":44.673626,"p":-0.8234},{"k":2293,"m":44.538837,"p":-0.5349},{"k":404,"m":44.504152,"p":-0.9921},{"k":1460,"m":44.407489,"p":-2.1297},{"k":1165,"m":44.22287,"p":-2.3515},{"k":5001,"m":44.126996,"p":-2.1745},{"k":135,"m":44.114148,"p":-2.6478},{"k":203,"m":44.074794,"p":-2.7812},{"k":1074,"m":43.910328,"p":0.0473},{"k":579,"m":43.782677,"p":-1.952},{"k":109,"m":43.700283,"p":-1.5775},{"k":406,"m":43.571893,"p":-1.1819},{"k":1851,"m":43.544986,"p":-1.6861},{"k":4114,"m":43.523344,"p":0.7499},{"k":143,"m":43.437362,"p":2.7146},{"k":258,"m":43.055946,"p":2.4003},{"k":1464,"m":42.592959,"p":2.8256},{"k":1675,"m":42.530652,"p":-2.7418},{"k":185,"m":42.525093,"p":1.8599}],"resid":{"fft":[[1,0.751099],[2,0.710619],[3,0.620508],[5,0.54132],[8,0.441888],[10,0.4003],[15,0.329018],[20,0.285418],[30,0.232206],[50,0.170848],[80,0.134674],[120,0.114195],[200,0.09137]],"hybrid":[[1,0.708698],[2,0.708698],[3,0.670763],[5,0.586887],[8,0.504324],[10,0.422254],[15,0.354777],[20,0.306346],[30,0.251092],[50,0.175268],[80,0.13399],[120,0.105532],[200,0.076054]],"freqband":[[1,0.981791],[2,0.968571],[3,0.682316],[5,0.659281],[8,0.562919],[10,0.458758],[15,0.349546],[20,0.298971],[30,0.238631],[50,0.182927],[80,0.138247],[120,0.115388],[200,0.090513]],"gabor":[[1,0.777536],[2,0.689923],[3,0.65009],[5,0.61436],[8,0.590122],[10,0.584282],[15,0.572279],[20,0.541127],[30,0.537427],[50,0.535155],[80,0.533998],[120,0.523083],[200,0.522504]]}},"guitar":{"label":"\u5409\u4ed6 C4 (262Hz)","s4":[-0.001359,0.280607,-0.259328,-0.070229,0.198697,-0.510609,0.314629,0.050368,-0.465202,0.298769,0.290456,0.339215,-0.192791,-0.289289,-0.042202,-0.131968,0.333914,-0.145612,-0.40274,0.412899,-0.057441,0.096292,0.164897,-0.293601,0.20292,-0.079635,-0.248475,-0.021677,0.242007,0.254308,-0.269798,-0.098802,0.060498,-0.030862,0.457627,-0.114174,-0.354409,0.096632,-0.101431,0.198225,-0.021781,-0.192894,0.29682,-0.256464,-0.123359,0.025324,-0.074009,0.36826,-0.124186,-0.192909,0.029651,0.155284,0.244207,-0.229884,-0.194828,-0.005257,-0.043723,0.378228,-0.045023,-0.139528,0.23269,-0.231272,0.040239,-0.05595,-0.207661,0.338875,-0.135866,-0.18622,0.018015,0.028027,0.312665,-0.101829,-0.154782,0.017572,0.066124,0.144623,-0.158665,-0.08569,0.10685,-0.069166,0.244606,-0.070953,-0.186279,0.263965,-0.137476,-0.06292,-0.041184,-0.072636,0.282733,-0.109154,-0.149407,0.026048,0.006571,0.185703,-0.100072,-0.114425,0.07621,0.132632,0.118087,-0.181273,-0.097813,0.101888,-0.117438,0.160231,-0.036148,-0.161427,0.216771,-0.110674,-0.064145,0.001344,-0.014013,0.221777,-0.140163,-0.192097,0.05533,0.082087,0.139262,-0.081437,-0.068856,0.0496,0.076623,0.13309,-0.132544,-0.098743,0.114189,-0.138391,0.080034,0.000221,-0.078454,0.193751,-0.140252,-0.113008,0.014309,0.038171,0.194445,-0.08693,-0.164616,0.016627,0.08882,0.105654,-0.118944,-0.027451,0.07621,-0.021219,0.105432,-0.066759,-0.072607,0.129147,-0.133503,0.009214,-0.022622,-0.027776,0.206169,-0.126548,-0.120849,0.029813,0.049261,0.149112,-0.051432,-0.108755,0.004164,0.04836,0.077937,-0.107692,0.00567,0.103557,-0.078912,0.048788,-0.045702,-0.060306,0.119431,-0.128453,-0.029238,-0.00886,-0.010455,0.166625,-0.109198,-0.121454,0.034967,0.062876,0.108445,-0.071027,-0.081688,0.019108,0.024114,0.063333,-0.093678,3e-05,0.097104,-0.082146,0.04966,-0.033727,-0.057176,0.115533,-0.132868,-0.029046,-0.00381,-0.006231,0.171542,-0.089352,-0.118013,0.038703,0.061827,0.084789,-0.065637,-0.052288,0.019388,0.009273,0.07268,-0.092763,-0.011503,0.110601,-0.084745,0.043694,-0.015062,-0.058889,0.108076,-0.114484,-0.043871,-0.001595,0.010455,0.158001,-0.075988,-0.106097,0.034568,0.056053,0.077037,-0.061739,-0.040061,0.025989,0.002584,0.063333,-0.084656,-0.010307,0.110232,-0.091567,0.0408,-0.005877,-0.061798,0.116906,-0.10434,-0.068797,0.014678,0.029031,0.134153,-0.060764,-0.095288,0.020319,0.051948,0.074246,-0.069993,-0.029873,0.045894,-0.011887,0.055596,-0.06636,-0.025029,0.099009,-0.081954,0.029651,-0.006261,-0.051358,0.122694,-0.094845,-0.077923,0.025132,0.032767,0.116847,-0.053263,-0.087211,0.016302,0.043827,0.071794,-0.070598,-0.020289,0.059568,-0.033357,0.047194,-0.047105,-0.035188,0.100633,-0.082013,0.009716,-0.002112,-0.034583,0.122576,-0.090016,-0.080846,0.030227,0.034805,0.106363,-0.04489,-0.08312,0.020378,0.039367,0.053322,-0.068531,-0.008373,0.060528,-0.039884,0.047888,-0.040563,-0.042439,0.095849,-0.079694,-0.006246,-0.003293,-0.017779,0.118353,-0.075279,-0.077155,0.026151,0.041036,0.089677,-0.047459,-0.062049,0.017897,0.023804,0.05282,-0.066065,-0.009687,0.068915,-0.042823,0.035528,-0.028056,-0.036207,0.084198,-0.082426,-0.011961,-0.004799,-0.011695,0.120376,-0.064544,-0.080093,0.03002,0.044403,0.068679,-0.04396,-0.046027,0.014368,0.017203,0.04616,-0.064013,-0.00443,0.071602,-0.047755,0.031777,-0.0193,-0.036621,0.078617,-0.07807,-0.025369,-0.004164,0.004445,0.113583,-0.057604,-0.076431,0.025945,0.042956,0.058903,-0.04331,-0.036488,0.017882,0.011547,0.043,-0.062167,-0.007295,0.072813,-0.053366,0.027377,-0.010351,-0.035853,0.077288,-0.073685,-0.035853,0.001078,0.012921,0.103158,-0.050043,-0.07051,0.023405,0.038777,0.050309,-0.044048,-0.02528,0.024276,0.001034,0.036473,-0.054311,-0.008638,0.069653,-0.055817,0.023951,-0.007103,-0.032501,0.079576,-0.069993,-0.04585,0.009111,0.021308],"fa":532,"fb":[{"k":194,"m":1262.400939,"p":-2.3628},{"k":388,"m":1046.974709,"p":1.408},{"k":195,"m":542.542542,"p":2.5068},{"k":387,"m":505.512933,"p":2.6648},{"k":582,"m":504.715012,"p":0.9104},{"k":196,"m":423.961641,"p":2.4836},{"k":1165,"m":402.409102,"p":1.5227},{"k":193,"m":394.556167,"p":-1.4016},{"k":386,"m":387.112293,"p":-3.0405},{"k":1164,"m":379.025366,"p":-3.027},{"k":192,"m":320.589963,"p":-1.0947},{"k":155,"m":286.407275,"p":0.454},{"k":197,"m":275.239606,"p":2.4736},{"k":156,"m":274.771187,"p":0.1202},{"k":157,"m":272.737026,"p":-0.0241},{"k":154,"m":255.3791,"p":0.7506},{"k":390,"m":239.189116,"p":0.338},{"k":581,"m":236.261895,"p":2.0108},{"k":158,"m":235.716985,"p":-0.3192},{"k":160,"m":231.413466,"p":-0.5057},{"k":159,"m":225.669075,"p":-0.3641},{"k":161,"m":217.432016,"p":-0.7025},{"k":191,"m":216.277393,"p":-0.9672},{"k":153,"m":206.852689,"p":1.0468},{"k":385,"m":206.773382,"p":-2.9324},{"k":389,"m":197.838273,"p":-0.1969},{"k":1163,"m":195.567885,"p":-2.5508},{"k":162,"m":191.89851,"p":-0.803},{"k":1359,"m":191.328063,"p":0.8622},{"k":198,"m":174.46083,"p":2.3395},{"k":163,"m":169.015503,"p":-0.9617},{"k":580,"m":168.357065,"p":2.665},{"k":391,"m":166.389496,"p":0.4403},{"k":152,"m":163.382606,"p":1.2712},{"k":164,"m":161.647614,"p":-0.9985},{"k":166,"m":157.287206,"p":-1.0917},{"k":80,"m":156.994948,"p":-2.606},{"k":165,"m":155.306031,"p":-1.0053},{"k":583,"m":148.797897,"p":-0.8381},{"k":81,"m":148.18929,"p":3.0771},{"k":1553,"m":145.378074,"p":-1.3853},{"k":584,"m":142.725988,"p":-0.1692},{"k":1554,"m":139.505787,"p":-3.0123},{"k":147,"m":137.73984,"p":1.0065},{"k":167,"m":133.303041,"p":-1.2578},{"k":776,"m":131.798908,"p":2.3738},{"k":79,"m":129.944645,"p":-1.9886},{"k":384,"m":129.295369,"p":-3.1069},{"k":199,"m":128.967216,"p":2.158},{"k":169,"m":122.153778,"p":-1.3827},{"k":200,"m":122.024384,"p":1.9456},{"k":2338,"m":121.049059,"p":0.8187},{"k":1166,"m":121.032654,"p":1.6007},{"k":190,"m":120.164412,"p":-1.2596},{"k":168,"m":119.849645,"p":-1.2464},{"k":2337,"m":117.403308,"p":1.4537},{"k":185,"m":117.081068,"p":-1.8387},{"k":146,"m":116.021709,"p":1.3099},{"k":151,"m":115.670886,"p":1.3777},{"k":148,"m":114.310791,"p":0.6113},{"k":201,"m":112.989118,"p":2.1308},{"k":2141,"m":111.890052,"p":-2.57},{"k":170,"m":111.731538,"p":-1.3063},{"k":176,"m":110.078903,"p":-1.3317},{"k":184,"m":109.402241,"p":-1.8073},{"k":175,"m":109.014778,"p":-1.3701},{"k":2142,"m":108.901841,"p":3.0675},{"k":970,"m":108.898955,"p":2.9674},{"k":179,"m":108.637122,"p":-1.6547},{"k":180,"m":108.488529,"p":-1.645},{"k":392,"m":107.759482,"p":0.7914},{"k":186,"m":104.746412,"p":-1.6993},{"k":82,"m":104.072715,"p":2.5553},{"k":174,"m":103.822018,"p":-1.4064},{"k":171,"m":103.644594,"p":-1.2954},{"k":181,"m":101.456217,"p":-1.5598},{"k":202,"m":100.932786,"p":2.2628},{"k":173,"m":100.812376,"p":-1.3619},{"k":177,"m":100.129775,"p":-1.454},{"k":579,"m":100.061425,"p":2.792},{"k":178,"m":99.195066,"p":-1.5558},{"k":183,"m":96.32491,"p":-1.6428},{"k":1945,"m":95.862399,"p":-1.7791},{"k":172,"m":95.781761,"p":-1.2166},{"k":2140,"m":95.564832,"p":-1.7997},{"k":585,"m":95.057914,"p":-0.3614},{"k":2534,"m":94.88699,"p":-0.7887},{"k":2339,"m":94.578075,"p":0.2232},{"k":145,"m":93.295961,"p":1.3921},{"k":1358,"m":92.258366,"p":2.511},{"k":396,"m":91.355594,"p":0.4495},{"k":1555,"m":89.369359,"p":2.7132},{"k":1167,"m":88.906529,"p":0.7473},{"k":2336,"m":87.792132,"p":2.1627},{"k":1944,"m":85.627254,"p":-0.9502},{"k":1162,"m":85.398824,"p":-2.2014},{"k":78,"m":85.147557,"p":-1.4885},{"k":383,"m":85.126728,"p":-2.7399},{"k":395,"m":84.379243,"p":0.3524},{"k":2535,"m":84.322385,"p":-1.4816},{"k":187,"m":83.945227,"p":-1.7951},{"k":182,"m":82.854646,"p":-1.606},{"k":1946,"m":82.495571,"p":-2.4913},{"k":2533,"m":82.083663,"p":-0.0373},{"k":144,"m":79.832179,"p":1.4075},{"k":393,"m":76.642294,"p":0.6864},{"k":206,"m":73.632667,"p":2.0143},{"k":203,"m":73.084489,"p":2.2591},{"k":397,"m":72.615713,"p":0.473},{"k":83,"m":71.716928,"p":2.4684},{"k":143,"m":71.686587,"p":1.5894},{"k":2143,"m":70.521252,"p":2.4361},{"k":2340,"m":70.504808,"p":-0.1667},{"k":205,"m":70.440194,"p":2.002},{"k":381,"m":69.791578,"p":-2.6916},{"k":207,"m":69.592685,"p":2.1347},{"k":84,"m":69.240493,"p":2.3016},{"k":149,"m":68.687697,"p":0.4947},{"k":382,"m":68.227166,"p":-2.4731},{"k":394,"m":67.059499,"p":0.3172},{"k":578,"m":66.238144,"p":2.6163},{"k":189,"m":66.119824,"p":-1.7961},{"k":400,"m":65.753033,"p":-0.051},{"k":775,"m":64.328476,"p":-2.9688},{"k":777,"m":64.033282,"p":0.4968},{"k":150,"m":62.789627,"p":1.2595},{"k":380,"m":62.772516,"p":-2.8503},{"k":1168,"m":62.546113,"p":0.4545},{"k":142,"m":62.025217,"p":1.5021},{"k":398,"m":61.782709,"p":0.5308},{"k":2139,"m":60.123819,"p":-1.1849},{"k":141,"m":60.009546,"p":1.5116},{"k":188,"m":59.93395,"p":-1.9959},{"k":204,"m":59.846747,"p":2.1408},{"k":2536,"m":59.621681,"p":-2.0575},{"k":971,"m":59.532797,"p":1.1575},{"k":208,"m":59.381735,"p":2.0886},{"k":399,"m":59.08523,"p":0.0762},{"k":1160,"m":58.918371,"p":-2.018},{"k":401,"m":58.704444,"p":0.0021},{"k":211,"m":54.969711,"p":1.7195},{"k":1159,"m":54.733249,"p":-1.9923},{"k":1943,"m":53.859829,"p":-0.2441},{"k":1360,"m":53.338372,"p":-0.1629},{"k":1947,"m":53.219532,"p":-2.9481},{"k":969,"m":53.043019,"p":-2.5928},{"k":1161,"m":52.727878,"p":-1.9884},{"k":140,"m":52.6551,"p":1.5576},{"k":1357,"m":51.968381,"p":2.7264},{"k":2135,"m":51.747002,"p":-1.6639},{"k":2532,"m":51.583675,"p":0.541},{"k":85,"m":50.512137,"p":2.0784},{"k":209,"m":50.135865,"p":1.8174},{"k":402,"m":49.764187,"p":0.2344},{"k":1169,"m":49.643446,"p":0.7199},{"k":210,"m":49.267007,"p":1.6477},{"k":77,"m":48.946425,"p":-1.3231},{"k":2341,"m":48.376782,"p":-0.3133},{"k":212,"m":47.772133,"p":1.7602},{"k":1361,"m":47.381555,"p":-0.5401},{"k":135,"m":47.256716,"p":1.4392},{"k":577,"m":46.583308,"p":2.8146},{"k":136,"m":46.400556,"p":1.4179},{"k":131,"m":45.766418,"p":1.6886},{"k":2342,"m":45.388444,"p":-0.4811},{"k":774,"m":44.712833,"p":-2.1173},{"k":137,"m":44.498112,"p":1.4617},{"k":2330,"m":44.27863,"p":-2.9854},{"k":1556,"m":43.956378,"p":2.298},{"k":132,"m":43.764771,"p":1.5237},{"k":138,"m":43.751721,"p":1.4295},{"k":588,"m":43.208584,"p":-0.9021},{"k":139,"m":43.128061,"p":1.4586},{"k":134,"m":42.320268,"p":1.5237},{"k":379,"m":42.277807,"p":-3.0456},{"k":1748,"m":41.939182,"p":2.9196},{"k":2144,"m":41.313777,"p":2.2858},{"k":2137,"m":41.287183,"p":-1.5658},{"k":130,"m":41.267155,"p":1.7185},{"k":2930,"m":40.986989,"p":-0.6528},{"k":2335,"m":40.278614,"p":2.6587},{"k":403,"m":40.125438,"p":0.0325},{"k":1170,"m":39.883643,"p":0.8789},{"k":1941,"m":39.803539,"p":0.3475},{"k":1552,"m":39.692857,"p":-1.6787},{"k":2136,"m":39.452896,"p":0.5051},{"k":87,"m":39.073292,"p":2.2194},{"k":586,"m":38.543853,"p":-0.3253},{"k":213,"m":38.337699,"p":1.7647},{"k":405,"m":38.243953,"p":-0.3219},{"k":1158,"m":38.214433,"p":-2.1017},{"k":86,"m":37.853397,"p":2.2427},{"k":406,"m":37.814664,"p":-0.1588},{"k":3129,"m":37.754072,"p":-1.5629},{"k":133,"m":37.732414,"p":1.5148},{"k":3128,"m":37.177715,"p":-0.9041},{"k":587,"m":36.978804,"p":-0.577},{"k":778,"m":36.889643,"p":1.1005},{"k":2929,"m":36.81218,"p":0.0739},{"k":576,"m":36.670048,"p":-2.9958},{"k":1362,"m":36.29769,"p":-0.5087},{"k":88,"m":35.840576,"p":2.0246},{"k":404,"m":35.658031,"p":-0.3338},{"k":1749,"m":35.479513,"p":2.0429},{"k":76,"m":35.374124,"p":-1.4521},{"k":376,"m":35.045804,"p":-2.6665},{"k":375,"m":34.964606,"p":-2.9167},{"k":2333,"m":34.802814,"p":2.3869},{"k":2329,"m":34.50893,"p":1.3271},{"k":589,"m":34.309526,"p":-0.6755},{"k":216,"m":34.235763,"p":1.4573},{"k":574,"m":33.690951,"p":2.9937},{"k":2145,"m":33.582284,"p":2.2313},{"k":129,"m":33.45934,"p":1.7955},{"k":575,"m":33.412633,"p":-3.0486},{"k":215,"m":33.174163,"p":1.3053},{"k":73,"m":32.835483,"p":-1.4107},{"k":214,"m":32.754356,"p":1.4409},{"k":94,"m":32.505735,"p":1.6972},{"k":2343,"m":32.49549,"p":-0.6799},{"k":127,"m":32.472014,"p":1.8311},{"k":972,"m":32.37975,"p":1.8324},{"k":217,"m":32.366899,"p":1.4526},{"k":3528,"m":32.337314,"p":0.0002},{"k":93,"m":32.280686,"p":2.0802},{"k":2931,"m":31.996357,"p":-1.283},{"k":411,"m":31.664896,"p":-0.1859},{"k":1948,"m":31.224147,"p":-3.0708},{"k":89,"m":31.162198,"p":2.0499},{"k":407,"m":31.120834,"p":0.0263},{"k":90,"m":31.020866,"p":2.0919},{"k":3130,"m":30.861445,"p":-2.1978},{"k":590,"m":30.37113,"p":-0.3274},{"k":968,"m":30.261949,"p":-1.8966},{"k":2537,"m":30.13978,"p":-2.3171},{"k":128,"m":30.134153,"p":1.796},{"k":125,"m":30.089137,"p":1.6859},{"k":3529,"m":29.773343,"p":-0.5654},{"k":2138,"m":29.09623,"p":-1.5396},{"k":1551,"m":28.869183,"p":-0.7938},{"k":1750,"m":28.85411,"p":1.239},{"k":374,"m":28.513729,"p":-3.1314},{"k":1942,"m":28.31139,"p":-1.7083},{"k":2334,"m":28.283418,"p":2.1767},{"k":378,"m":27.999156,"p":-2.9437},{"k":3527,"m":27.969576,"p":0.6347},{"k":1157,"m":27.913776,"p":-2.0441},{"k":126,"m":27.909998,"p":1.8564},{"k":74,"m":27.752139,"p":-1.7566},{"k":3127,"m":27.699451,"p":-0.1725},{"k":377,"m":27.612352,"p":-2.7264},{"k":75,"m":27.423412,"p":-1.5511},{"k":124,"m":27.332668,"p":1.7223},{"k":91,"m":27.24513,"p":2.0391},{"k":1155,"m":26.989243,"p":-1.5894},{"k":2146,"m":26.890325,"p":2.0633},{"k":1949,"m":26.839239,"p":-3.0559},{"k":594,"m":26.804865,"p":-0.818},{"k":2538,"m":26.801382,"p":-2.2127},{"k":2531,"m":26.775231,"p":0.7842},{"k":1154,"m":26.709257,"p":-1.8593},{"k":410,"m":26.673547,"p":-0.2639},{"k":1156,"m":26.409889,"p":-1.7062},{"k":1557,"m":26.253312,"p":2.0265},{"k":2928,"m":25.925575,"p":0.6289},{"k":123,"m":25.818038,"p":1.845},{"k":333,"m":25.748449,"p":2.9708},{"k":773,"m":25.426391,"p":-1.843},{"k":412,"m":25.417723,"p":-0.0898},{"k":573,"m":25.354718,"p":2.8778},{"k":2344,"m":25.317902,"p":-0.6888},{"k":2523,"m":25.28401,"p":-0.5628},{"k":122,"m":25.061266,"p":1.9163},{"k":121,"m":25.019599,"p":1.8555},{"k":332,"m":24.926676,"p":3.1394},{"k":120,"m":24.721905,"p":1.7704},{"k":1940,"m":24.674795,"p":-1.0882},{"k":3530,"m":24.408949,"p":-0.9956},{"k":2345,"m":24.363086,"p":-0.8101},{"k":591,"m":24.362739,"p":-0.5085},{"k":117,"m":24.222229,"p":1.939},{"k":369,"m":24.137497,"p":2.9132},{"k":1153,"m":24.026223,"p":-1.9023},{"k":92,"m":24.022242,"p":2.1892},{"k":72,"m":23.92559,"p":-1.1212},{"k":1363,"m":23.887935,"p":-0.3631},{"k":1356,"m":23.560019,"p":2.6544},{"k":1950,"m":23.366739,"p":2.9844},{"k":1558,"m":23.366342,"p":2.0606},{"k":226,"m":23.348611,"p":1.1533},{"k":2539,"m":23.337403,"p":-2.4024},{"k":119,"m":23.12948,"p":1.7543},{"k":116,"m":23.11343,"p":2.0117},{"k":370,"m":22.956969,"p":-3.0297},{"k":3329,"m":22.937965,"p":0.7537},{"k":1550,"m":22.865745,"p":-0.6499},{"k":1549,"m":22.737117,"p":-0.8989},{"k":3324,"m":22.518459,"p":1.6167},{"k":1171,"m":22.182283,"p":0.7008},{"k":331,"m":22.002122,"p":-3.0729}],"resid":{"fft":[[1,0.712654],[2,0.515883],[3,0.486965],[5,0.407688],[8,0.350853],[10,0.327357],[15,0.266046],[20,0.233418],[30,0.188399],[50,0.145331],[80,0.111709],[120,0.085508],[200,0.071121]],"hybrid":[[1,0.665544],[2,0.665544],[3,0.468527],[5,0.418236],[8,0.329173],[10,0.301189],[15,0.242228],[20,0.21717],[30,0.172185],[50,0.137168],[80,0.101938],[120,0.07949],[200,0.054374]],"freqband":[[1,0.996192],[2,0.99369],[3,0.512081],[5,0.506927],[8,0.441533],[10,0.37999],[15,0.327344],[20,0.290008],[30,0.223238],[50,0.164234],[80,0.11539],[120,0.096173],[200,0.074121]],"gabor":[[1,0.851164],[2,0.684526],[3,0.639911],[5,0.596098],[8,0.567452],[10,0.555479],[15,0.546109],[20,0.526306],[30,0.514558],[50,0.509466],[80,0.489769],[120,0.489666],[200,0.48929]]}}};
+
+
+let currentPreset = 'piano';
+let currentK = 1;
+
+const METHOD_COLORS = {
+  fft:     '#c41a1a',
+  hybrid:  '#2d7dd2',
+  freqband:'#e6a817',
+  gabor:   '#9b59b6'
+};
+const METHOD_LABELS = {
+  fft:     'FFT Top-K',
+  hybrid:  'FFT+Gabor混合',
+  freqband:'频段分裂',
+  gabor:   'Gabor OMP'
+};
+
+function initPresets() {
+  const container = document.getElementById('presetButtons');
+  container.innerHTML = '';
+  for (const [key, p] of Object.entries(PRESET_DATA)) {
+    const btn = document.createElement('button');
+    btn.textContent = p.label;
+    btn.className = (key === currentPreset) ? 'primary' : '';
+    btn.onclick = () => { currentPreset = key; switchPreset(); };
+    container.appendChild(btn);
+  }
+  document.getElementById('kSlider').addEventListener('input', (e) => {
+    currentK = +e.target.value;
+    document.getElementById('kVal').textContent = currentK;
+    drawFFTmag();
+    drawResidCurve();
+    drawSparsityBars();
+  });
+}
+
+function switchPreset() {
+  const p = PRESET_DATA[currentPreset];
+  document.getElementById('kSlider').max = 50;
+  currentK = Math.min(currentK, 50);
+  document.getElementById('kSlider').value = currentK;
+  document.getElementById('kVal').textContent = currentK;
+  document.getElementById('fftActive').textContent = p.fa;
+  const btns = document.getElementById('presetButtons').querySelectorAll('button');
+  let idx = 0;
+  for (const [key] of Object.entries(PRESET_DATA)) {
+    btns[idx].className = (key === currentPreset) ? 'primary' : '';
+    idx++;
+  }
+  drawSignal();
+  drawFFTmag();
+  drawResidCurve();
+  drawSparsityBars();
+}
+
+function drawSignal() {
+  const c = document.getElementById('canvasSignal');
+  const w = c.width = c.parentElement.clientWidth - 28;
+  const h = c.height = 140;
+  const ctx = c.getContext('2d');
+  const p = PRESET_DATA[currentPreset];
+  ctx.fillStyle = CG_BG; ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle = 'rgba(0,0,0,.1)'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
+  ctx.strokeStyle = '#4a4a4a'; ctx.lineWidth=1.3;
+  ctx.beginPath();
+  const nPts = p.s4.length;
+  let first = true;
+  for (let px=0; px<w; px++) {
+    const i = Math.floor(px/w * nPts);
+    const y = h/2 - (p.s4[i]/0.9)*(h*0.42);
+    if (first) { ctx.moveTo(px,y); first=false; }
+    else ctx.lineTo(px,y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = CG_TEXT; ctx.font='10px system-ui'; ctx.textAlign='center';
+  for (let t=0; t<=600; t+=100) { ctx.fillText(t+'ms', t/600*w, h-5); }
+  ctx.textAlign='left';
+  ctx.fillText(p.label, 8, 14);
+}
+
+function drawFFTmag() {
+  const c = document.getElementById('canvasFFTmag');
+  const w = c.width = c.parentElement.clientWidth - 28;
+  const h = c.height = 140;
+  const ctx = c.getContext('2d');
+  const p = PRESET_DATA[currentPreset];
+  const fb = p.fb;
+  const K = currentK;
+  ctx.fillStyle = CG_BG; ctx.fillRect(0,0,w,h);
+  const fMax = 5000;
+  const SR = 44100, fftN = 32768;
+
+  const topK = new Set(fb.slice(0, K).map(b => b.k));
+  const fbByFreq = [...fb].filter(b => b.k * SR / fftN <= fMax).sort((a,b) => a.k - b.k);
+  const yBase = h - 10, yScale = h * 0.85;
+  const maxMag = fb.length > 0 ? fb[0].m : 1;
+
+  ctx.strokeStyle = 'rgba(196,26,26,.18)'; ctx.lineWidth=1;
+  ctx.beginPath();
+  let first = true;
+  for (const b of fbByFreq) {
+    const x = b.k * SR / fftN / fMax * w;
+    const y = yBase - (b.m/maxMag) * yScale * 0.85;
+    if (first) { ctx.moveTo(x,y); first=false; }
+    else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  const selected = fbByFreq.filter(b => topK.has(b.k));
+  if (selected.length > 0) {
+    ctx.strokeStyle = '#c41a1a'; ctx.lineWidth=2;
+    ctx.beginPath(); first = true;
+    for (const b of selected) {
+      const x = b.k * SR / fftN / fMax * w;
+      const y = yBase - (b.m/maxMag) * yScale * 0.85;
+      if (first) { ctx.moveTo(x,y); first=false; }
+      else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#c41a1a';
+    for (const b of selected) {
+      const x = b.k * SR / fftN / fMax * w;
+      const y = yBase - (b.m/maxMag) * yScale * 0.85;
+      ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  ctx.fillStyle = CG_TEXT; ctx.font='10px system-ui'; ctx.textAlign='center';
+  for (let f=0; f<=fMax; f+=1000) { ctx.fillText(f+(f>=1000?'k':''), f/fMax*w, h-3); }
+  ctx.textAlign='left';
+  ctx.fillText('FFT 幅度谱 — 最强 '+K+' 个 bin 红色高亮', 8, 14);
+}
+
+function drawResidCurve() {
+  const c = document.getElementById('canvasResidCurve');
+  const w = c.width = c.parentElement.clientWidth - 28;
+  const h = c.height = 240;
+  const ctx = c.getContext('2d');
+  const p = PRESET_DATA[currentPreset];
+  ctx.fillStyle = CG_BG; ctx.fillRect(0,0,w,h);
+
+  const margin = {l:55, r:15, t:15, b:35};
+  const pw = w - margin.l - margin.r;
+  const ph = h - margin.t - margin.b;
+
+  const maxK = 50;
+
+  function tx(k) { return margin.l + (k/maxK) * pw; }
+  function ty(r) { return margin.t + ph * (1 - r); }
+
+  // Axes
+  ctx.strokeStyle = CG_TEXT_B; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(margin.l,margin.t); ctx.lineTo(margin.l,margin.t+ph);
+  ctx.lineTo(margin.l+pw,margin.t+ph); ctx.stroke();
+  ctx.fillStyle = CG_TEXT; ctx.font='10px system-ui'; ctx.textAlign='center';
+  ctx.fillText('分量数量 K', margin.l+pw/2, h-5);
+  ctx.save(); ctx.translate(12, margin.t+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText('残余能量比', 0,0); ctx.restore();
+
+  // Ticks
+  ctx.textAlign='center';
+  for (let k=0; k<=maxK; k+=5) { ctx.fillText(k, tx(k), margin.t+ph+15); }
+  ctx.textAlign='right';
+  for (let r=0; r<=1; r+=0.1) {
+    ctx.fillText((r*100).toFixed(0)+'%', margin.l-5, ty(r)+3);
+    ctx.strokeStyle = 'rgba(0,0,0,.06)'; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(margin.l, ty(r)); ctx.lineTo(margin.l+pw, ty(r)); ctx.stroke();
+  }
+
+  // Draw each method's curve
+  const methods = ['fft', 'hybrid', 'freqband', 'gabor'];
+  for (const method of methods) {
+    const data = p.resid[method];
+    if (!data || data.length === 0) continue;
+    const color = METHOD_COLORS[method];
+    ctx.strokeStyle = color; ctx.lineWidth=2.5; ctx.beginPath();
+    let first = true;
+    for (const [k, r] of data) {
+      if (k > maxK) continue;
+      const x = tx(k), y = ty(r);
+      if (first) { ctx.moveTo(x,y); first=false; }
+      else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = color;
+    for (const [k, r] of data) {
+      if (k > maxK) continue;
+      ctx.beginPath(); ctx.arc(tx(k), ty(r), 3, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  // Current K marker
+  ctx.strokeStyle = 'rgba(26,109,212,.4)'; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(tx(currentK), margin.t); ctx.lineTo(tx(currentK), margin.t+ph);
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = 'var(--accent)'; ctx.font='bold 10px system-ui'; ctx.textAlign='center';
+  ctx.fillText('K='+currentK, tx(currentK), margin.t-3);
+
+  // Legend
+  ctx.textAlign='left'; ctx.font='10px system-ui';
+  let ly = margin.t + 5;
+  for (const method of methods) {
+    if (!p.resid[method] || p.resid[method].length === 0) continue;
+    ctx.fillStyle = METHOD_COLORS[method];
+    ctx.fillRect(margin.l+10, ly, 12, 3);
+    ctx.fillText(' ' + METHOD_LABELS[method], margin.l+25, ly+5);
+    ly += 15;
+  }
+}
+
+function drawSparsityBars() {
+  const p = PRESET_DATA[currentPreset];
+  const container = document.getElementById('sparsityBars');
+  container.innerHTML = '';
+
+  const methods = ['fft', 'hybrid', 'freqband', 'gabor'];
+  const results = [];
+  for (const method of methods) {
+    const data = p.resid[method];
+    if (!data || data.length === 0) { results.push({method, k95: null}); continue; }
+    let k95 = null;
+    for (const [k, r] of data) {
+      if (r <= 0.05) { k95 = k; break; }
+    }
+    results.push({method, k95});
+  }
+
+  const validK = results.filter(r => r.k95 !== null).map(r => r.k95);
+  const maxBarK = Math.max(...validK, 50);
+
+  for (const {method, k95} of results) {
+    const color = METHOD_COLORS[method];
+    const label = METHOD_LABELS[method];
+    const div = document.createElement('div');
+    div.className = 'meter';
+    div.style.margin = '.3rem 0';
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'meter-label';
+    labelSpan.textContent = label + '：';
+    div.appendChild(labelSpan);
+
+    const barSpan = document.createElement('span');
+    barSpan.className = 'meter-bar';
+    barSpan.style.background = color;
+    if (k95 !== null) {
+      barSpan.style.width = Math.max(2, (k95/maxBarK*100)).toFixed(1) + '%';
+    } else {
+      barSpan.style.width = '100%';
+      barSpan.style.background = color + '33';
+    }
+    div.appendChild(barSpan);
+
+    const valSpan = document.createElement('span');
+    valSpan.style.cssText = 'font-size:.82rem;color:'+color+';font-weight:600;';
+    valSpan.textContent = k95 !== null ? 'K='+k95+' 达到 <5% 残余' : '>50 未达标';
+    div.appendChild(valSpan);
+
+    container.appendChild(div);
+  }
+}
+
+initPresets();
+switchPreset();
+
+// ==================== KaTeX auto-render ====================
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof renderMathInElement !== 'undefined') {
+    renderMathInElement(document.body, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false}
+      ]
+    });
+  }
+});
+
+// ==================== Handle resize ====================
+window.addEventListener('resize', () => {
+  drawGabor();
+  drawHeisenberg();
+  drawSignal();
+  drawFFTmag();
+  drawRecons();
+  drawResidCurve();
+  drawMpAtoms();
+});
+</script>
+</body>
+</html>

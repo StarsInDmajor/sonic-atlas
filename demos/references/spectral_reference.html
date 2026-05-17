@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音频频谱表示全景：从 FFT 到小波</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  :root {
+    --bg: #f5f5f5; --surface: #ffffff; --border: #d0d0d0;
+    --text: #1a1a1a; --text2: #4a4a4a; --accent: #1a6dd4;
+    --green: #1a7a2e; --orange: #b85c00; --red: #c41a1a;
+    --purple: #6b21c4; --cyan: #0d7a6e; --pink: #c41a7a;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); line-height:1.65; }
+  .container { max-width:1140px; margin:0 auto; padding:2rem 1.5rem; }
+  h1 { font-size:2rem; margin-bottom:.3rem; }
+  h1 small { font-size:.9rem; color:var(--text2); font-weight:400; display:block; margin-top:.2rem; }
+  h2 { font-size:1.35rem; color:var(--accent); margin:2.2rem 0 .8rem; padding-bottom:.3rem; border-bottom:2px solid var(--accent); }
+  h3 { font-size:1.05rem; color:var(--text); margin:1.2rem 0 .5rem; }
+  p, li { margin:.5rem 0; color:var(--text2); font-size:.92rem; }
+  ul, ol { padding-left:1.4rem; }
+  strong { color:var(--text); }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1.2rem 1.4rem; margin:1rem 0; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:1rem 0; }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; }
+  canvas { display:block; width:100%; border-radius:6px; background:#fafafa; border:1px solid var(--border); margin:.6rem 0; }
+  .formula-block { display:block; text-align:center; padding:.8rem; margin:.7rem 0; background:rgba(26,109,212,.04); border-radius:6px; overflow-x:auto; font-size:1.05rem; }
+  .formula-block-sm { display:block; text-align:center; padding:.5rem; margin:.4rem 0; background:rgba(26,109,212,.03); border-radius:6px; overflow-x:auto; font-size:.95rem; }
+  .highlight { color:var(--green); font-weight:600; }
+  .warn { color:var(--orange); }
+  .danger { color:var(--red); }
+  .accent { color:var(--accent); font-weight:600; }
+  .badge { display:inline-block; padding:.15rem .55rem; border-radius:10px; font-size:.75rem; font-weight:600; }
+  .badge-green { background:rgba(26,122,46,.12); color:var(--green); }
+  .badge-orange { background:rgba(184,92,0,.12); color:var(--orange); }
+  .badge-red { background:rgba(196,26,26,.12); color:var(--red); }
+  .badge-purple { background:rgba(107,33,196,.12); color:var(--purple); }
+  .badge-cyan { background:rgba(13,122,110,.12); color:var(--cyan); }
+  .badge-pink { background:rgba(196,26,122,.12); color:var(--pink); }
+  .badge-accent { background:rgba(26,109,212,.12); color:var(--accent); }
+  .tabs { display:flex; gap:.3rem; margin-bottom:.8rem; flex-wrap:wrap; }
+  .tab { padding:.4rem .9rem; border:1px solid var(--border); border-radius:6px 6px 0 0; background:var(--surface); color:var(--text2); cursor:pointer; font-size:.82rem; transition:all .15s; }
+  .tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .tab:hover:not(.active) { background:rgba(26,109,212,.08); }
+  .slider-group { margin:.6rem 0; }
+  .slider-group label { display:flex; justify-content:space-between; font-size:.82rem; color:var(--text2); }
+  .slider-group input[type=range] { width:100%; margin:.3rem 0; accent-color:var(--accent); }
+  .comparison-table { width:100%; border-collapse:collapse; margin:.8rem 0; font-size:.88rem; }
+  .comparison-table th { background:rgba(26,109,212,.06); color:var(--text); padding:.5rem .8rem; text-align:left; border-bottom:2px solid var(--accent); font-weight:600; }
+  .comparison-table td { padding:.45rem .8rem; border-bottom:1px solid var(--border); color:var(--text2); vertical-align:top; }
+  .comparison-table tr:hover td { background:rgba(26,109,212,.04); }
+  .callout { padding:.8rem 1rem; border-radius:6px; margin:.7rem 0; font-size:.88rem; }
+  .callout-info { background:rgba(26,109,212,.06); border-left:3px solid var(--accent); }
+  .callout-warn { background:rgba(184,92,0,.06); border-left:3px solid var(--orange); }
+  .callout-success { background:rgba(26,122,46,.06); border-left:3px solid var(--green); }
+  .callout-danger { background:rgba(196,26,26,.06); border-left:3px solid var(--red); }
+  .callout-purple { background:rgba(107,33,196,.06); border-left:3px solid var(--purple); }
+  .toc { columns:2; column-gap:2rem; }
+  .toc a { color:var(--accent); text-decoration:none; font-size:.88rem; }
+  .toc a:hover { text-decoration:underline; }
+  .toc li { margin:.2rem 0; }
+  .spec-card { padding:1rem; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+  .spec-card h4 { font-size:.95rem; margin-bottom:.3rem; }
+  .note { font-size:.82rem; color:var(--text2); font-style:italic; }
+  @media (max-width:768px) { .grid2,.grid3 { grid-template-columns:1fr; } .toc { columns:1; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>音频频谱表示全景<small>从 FFT 到小波——项目中所有频谱方法的系统对照</small></h1>
+
+<p>在 Sonic Atlas 项目的五个模块和四个交互演示中，使用了约 <strong>10 种</strong> 不同的频谱表示方法。本文是对它们的系统性介绍：每种方法"看到"了声音的什么面向，它们在数学上如何定义，各自的时间-频率权衡，以及在项目中的使用位置。</p>
+
+<h2>目录</h2>
+<ol class="toc">
+  <li><a href="#s1">FFT — 全局频率分解</a></li>
+  <li><a href="#s2">STFT — 短时傅里叶变换</a></li>
+  <li><a href="#s3">Magnitude Spectrogram — 声谱图</a></li>
+  <li><a href="#s4">Mel Spectrogram — 梅尔声谱图</a></li>
+  <li><a href="#s5">MFCC — 梅尔频率倒谱系数</a></li>
+  <li><a href="#s6">CQT — 恒定 Q 变换</a></li>
+  <li><a href="#s7">CWT / Scalogram — 连续小波变换 / 小波谱</a></li>
+  <li><a href="#s8">Gammatone Spectrogram — 伽马通声谱图</a></li>
+  <li><a href="#s9">Chromagram — 色度图</a></li>
+  <li><a href="#s10">Gabor Atoms / Matching Pursuit — 时频原子分解</a></li>
+</ol>
+
+<!-- ===== §1 FFT ===== -->
+<h2 id="s1">1. FFT — 快速傅里叶变换（全局频率分解）</h2>
+
+<div class="card">
+  <h3>本质</h3>
+  <p>FFT 是 DFT（离散傅里叶变换）的高效实现算法。它将一段长度为 $N$ 的<strong>时域信号</strong>变换为 $N/2+1$ 个<strong>频率 bin</strong>，每个 bin 包含一个复数值（幅度 + 相位）。FFT 是<strong>全局的</strong>——它分析整段信号，不区分"何时"发生了什么。</p>
+
+  <div class="formula-block">$$X[k] = \sum_{n=0}^{N-1} x[n] \cdot e^{-i 2\pi k n / N}, \quad k = 0, 1, \ldots, N/2$$</div>
+
+  <div class="grid2">
+    <div>
+      <h3>关键参数</h3>
+      <table class="comparison-table">
+        <tr><th>参数</th><th>含义</th></tr>
+        <tr><td>$N$（FFT 点数）</td><td>分析窗的采样数，通常取 2 的幂（512, 1024, 2048, 4096）</td></tr>
+        <tr><td>$f_s$（采样率）</td><td>决定可分析的最高频率：$f_{\max} = f_s / 2$</td></tr>
+        <tr><td>$\Delta f = f_s / N$</td><td>频率分辨率（相邻 bin 的 Hz 间距）</td></tr>
+        <tr><td>$\Delta t = N / f_s$</td><td>信号持续时间（时间窗长度）</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>频率轴特征</h3>
+      <p>FFT 的频率轴是<strong>等间距线性</strong>的——每个 bin 的带宽相同（$\Delta f$ 恒定）。这意味着：</p>
+      <ul>
+        <li><span class="highlight">低频区</span>：一个 bin 可能跨越多个临界带（过度粗糙）</li>
+        <li><span class="highlight">高频区</span>：大量 bin 对人耳来说是冗余的</li>
+      </ul>
+      <div class="callout callout-warn">
+        <strong>FFT 对音乐的局限：</strong>1024 点 FFT @ 44.1 kHz 给出 $\Delta f \approx 43$ Hz。在 100 Hz 处，这意味着 100 Hz 和 143 Hz 分属两个 bin——但人类在 100 Hz 处的音高 JND 约 3 Hz！FFT 的线性频率轴不匹配听觉。
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== §2 STFT ===== -->
+<h2 id="s2">2. STFT — 短时傅里叶变换</h2>
+
+<div class="card">
+  <h3>本质</h3>
+  <p>STFT 在 FFT 的基础上引入<strong>时间维度</strong>：将信号切成重叠的短帧，对每一帧做 FFT，然后将结果堆叠为 2D 矩阵——横轴是时间，纵轴是频率，每个像素是一个复数值。</p>
+
+  <div class="formula-block">$$S(m, k) = \sum_{n=0}^{N-1} x[n + mH] \cdot w[n] \cdot e^{-i 2\pi k n / N}$$</div>
+
+  <p>其中 $w[n]$ 是窗函数（如 Hann 窗），$H$ 是 hop size（帧移），$m$ 是帧索引。</p>
+
+  <div class="grid2">
+    <div>
+      <h3>关键参数</h3>
+      <table class="comparison-table">
+        <tr><th>参数</th><th>典型值</th><th>影响</th></tr>
+        <tr><td>窗长 $N$</td><td>1024 / 2048</td><td>频率分辨率 $\Delta f = f_s/N$</td></tr>
+        <tr><td>帧移 $H$</td><td>256 / 512</td><td>时间分辨率 $\Delta t = H / f_s$</td></tr>
+        <tr><td>窗函数</td><td>Hann, Hamming, Blackman</td><td>旁瓣抑制 vs. 主瓣宽度</td></tr>
+        <tr><td>重叠率</td><td>50%–75%</td><td>信息丢失的保险</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>时间-频率权衡</h3>
+      <p>STFT 受制于<strong>Heisenberg-Gabor 不确定性</strong>：</p>
+      <div class="formula-block-sm">$$\Delta t \cdot \Delta f \geq \frac{1}{4\pi}$$</div>
+      <ul>
+        <li>长窗 → 频率分辨率高，时间分辨率低（低频精确，瞬态模糊）</li>
+        <li>短窗 → 时间分辨率高，频率分辨率低（瞬态精确，低频模糊）</li>
+      </ul>
+      <p>这个全局固定的窗长是 STFT 的根本限制——也是 CQT 和小波存在的理由。</p>
+    </div>
+  </div>
+
+  <div class="callout callout-info">
+    <strong>在项目中的使用：</strong>模块五（CNN）演示中的"线性频率"标签就是标准 STFT 声谱图。模块三（波包）的对比中，STFT 作为基线方法出现。
+  </div>
+</div>
+
+<!-- ===== §3 Magnitude Spectrogram ===== -->
+<h2 id="s3">3. Magnitude Spectrogram — 声谱图</h2>
+
+<div class="card">
+  <h3>本质</h3>
+  <p>声谱图就是 STFT 的<strong>幅度的平方</strong>（或对数幅度），表示为 2D 热力图：横轴 = 时间，纵轴 = 频率，颜色 = 该时频位置的能量强度。</p>
+
+  <div class="formula-block">$$P(m, k) = |S(m, k)|^2 = \left|\sum_{n} x[n+mH] \cdot w[n] \cdot e^{-i2\pi kn/N}\right|^2$$</div>
+
+  <p>对数形式（dB 声谱图）更常用：</p>
+  <div class="formula-block-sm">$$P_{\text{dB}}(m, k) = 10 \log_{10} |S(m, k)|^2$$</div>
+
+  <div class="grid2">
+    <div>
+      <h3>物理对应</h3>
+      <ul>
+        <li>每个像素 $(f, t)$ 对应物理三元组 <span class="highlight">$(f, t, a)$</span>——频率、时间、强度</li>
+        <li>与人类听觉的耳蜗分析有直接类比：基底膜上不同位置 = 不同频率通道</li>
+        <li>丢弃相位信息 → 对音色分类几乎无影响（模块二的结论）</li>
+      </ul>
+    </div>
+    <div>
+      <h3>CNN 输入的标准形态</h3>
+      <p>声谱图是 2D 矩阵，可直接作为 CNN 的"图像"输入——这正是模块五的核心思想：</p>
+      <ul>
+        <li>声谱图 → 2D CNN = 音频分类的工业标准</li>
+        <li>频率轴的平移 = 音高变化 → CNN 天然习得音高不变性</li>
+        <li>时间轴的平移 = 起奏偏移 → CNN 天然习得时间对齐不变性</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== §4 Mel Spectrogram ===== -->
+<h2 id="s4">4. Mel Spectrogram — 梅尔声谱图</h2>
+
+<div class="card">
+  <h3>本质</h3>
+  <p>Mel 声谱图在标准声谱图的基础上，将<strong>频率轴从线性 Hz 重映射到 Mel 尺度</strong>——一种与人耳频率感知近似匹配的对数尺度。核心映射公式：</p>
+
+  <div class="formula-block">$$m = 2595 \cdot \log_{10}\!\left(1 + \frac{f}{700}\right)$$</div>
+
+  <p>实现方式：构造一组 <strong>Mel 滤波器组</strong>（通常 64–128 个三角滤波器），在频率轴上按 Mel 尺度等间距分布，对 STFT 结果进行加权求和。</p>
+
+  <div class="grid2">
+    <div>
+      <h3>为什么 Mel 尺度更好</h3>
+      <ul>
+        <li><strong>低频展开</strong>（0–1000 Hz 获得更多 bin）→ 匹配临界带的高分辨率</li>
+        <li><strong>高频压缩</strong>（>4000 Hz bin 数减少）→ 匹配临界带的低分辨率</li>
+        <li>全频段共约 <span class="highlight">24 个临界带</span>——Mel 滤波器组模拟了这一点</li>
+        <li>20 世纪 40 年代提出的 Mel 尺度至今仍是 CNN 音频输入的事实标准</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Mel vs. 线性频率</h3>
+      <table class="comparison-table">
+        <tr><th>性质</th><th>线性频谱图</th><th>Mel 频谱图</th></tr>
+        <tr><td>频率轴</td><td>等间距 Hz</td><td>对数（近似）</td></tr>
+        <tr><td>低频 bin 数</td><td>少（粗糙）</td><td><span class="highlight">多（精细）</span></td></tr>
+        <tr><td>高频 bin 数</td><td>多（冗余）</td><td>少（压缩）</td></tr>
+        <tr><td>维度</td><td>$N/2+1$（~513）</td><td>$M$（~64–128）</td></tr>
+        <tr><td>感知匹配</td><td>差</td><td><span class="highlight">好</span></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="callout callout-success">
+    <strong>在项目中的使用：</strong>模块五 CNN 演示的"Mel 频率"标签、SpectroFusionNet 的 Mel 分支、以及所有讨论 CNN 音频输入的地方，都以 Mel 声谱图为基准。
+  </div>
+</div>
+
+<!-- ===== §5 MFCC ===== -->
+<h2 id="s5">5. MFCC — 梅尔频率倒谱系数</h2>
+
+<div class="card">
+  <h3>本质</h3>
+  <p>MFCC 是对 Mel 声谱图的进一步<strong>压缩与去相关</strong>。计算步骤：</p>
+  <ol>
+    <li>对信号做 STFT → 幅度谱</li>
+    <li>通过 Mel 滤波器组 → Mel 频谱向量（每帧一个 $M$ 维向量）</li>
+    <li>取对数 → $\log$ Mel 频谱</li>
+    <li><strong>离散余弦变换（DCT）</strong>→ 取前 $C$ 个系数（通常 $C = 13$–$20$）</li>
+  </ol>
+
+  <div class="formula-block">$$c_j = \sum_{m=0}^{M-1} \log\!\bigl(X_{\text{mel}}[m]\bigr) \cdot \cos\!\left[\frac{\pi j}{M}\Bigl(m + \tfrac{1}{2}\Bigr)\right], \quad j = 0, 1, \ldots, C-1$$</div>
+
+  <h3>为什么要 DCT</h3>
+  <div class="grid2">
+    <div>
+      <ul>
+        <li>DCT 使各系数<strong>近似去相关</strong>——$c_0$（能量）$c_1$（频谱斜率）$c_2$（弯曲度）等各捕获独立信息</li>
+        <li>取前 $C$ 个系数 = 对频谱包络的<strong>低阶多项式近似</strong></li>
+        <li>维度进一步压缩：从 $M$（~128）→ $C$（~13）——极度紧凑</li>
+      </ul>
+    </div>
+    <div>
+      <table class="comparison-table" style="font-size:.82rem;">
+        <tr><th>系数</th><th>物理意义</th></tr>
+        <tr><td>$c_0$</td><td>整体能量（响度）</td></tr>
+        <tr><td>$c_1$</td><td>频谱重心/斜率（亮度）</td></tr>
+        <tr><td>$c_2$</td><td>频谱弯曲度</td></tr>
+        <tr><td>$c_3$–$c_{12}$</td><td>更精细的频谱形状</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="callout callout-warn">
+    <strong>MFCC 的局限：</strong>DCT 去相关同时也<strong>丢弃了频谱的精细结构</strong>。MFCC 擅长捕获"频谱包络形状"（对应音色亮度），但无法分辨"哪些频率有能量"（谐波 vs. 噪声的区分力弱于声谱图）。在 CNN 时代，直接使用 log-Mel 声谱图（不经 DCT）往往更好——因为 CNN 可以学到比 DCT 更好的变换。
+  </div>
+
+  <div class="callout callout-info">
+    <strong>在项目中的使用：</strong>模块二提到 MFCC 是丢弃相位后的合理特征；模块五讨论 CNN 时指出 log-Mel 声谱图已取代 MFCC 成为 CNN 输入的首选。
+  </div>
+</div>
+
+<!-- ===== §6 CQT ===== -->
+<h2 id="s6">6. CQT — 恒定 Q 变换</h2>
+
+<div class="card">
+  <h3>本质</h3>
+  <p>CQT 的核心思想：让<strong>频率分辨率与中心频率成正比</strong>——即 $\Delta f / f = \text{const}$（恒定 Q 值）。这意味着：</p>
+  <ul>
+    <li>低频：窄带宽、长窗、高频率精度</li>
+    <li>高频：宽带宽、短窗、高时间精度</li>
+  </ul>
+  <p>这正是 STFT 做不到的——STFT 的 $\Delta f$ 全局固定，CQT 的 $\Delta f$ 随频率缩放。</p>
+
+  <div class="formula-block">$$X_{\text{CQT}}[k] = \frac{1}{N_k} \sum_{n=0}^{N_k-1} x[n] \cdot w_k[n] \cdot e^{-i 2\pi n / N_k}$$</div>
+
+  <p>其中第 $k$ 个 bin 的中心频率和窗长分别为：</p>
+  <div class="formula-block-sm">$$f_k = f_1 \cdot 2^{k/B}, \qquad N_k = \left\lfloor \frac{f_s}{f_k} \cdot Q \right\rfloor, \qquad Q = \frac{2^{1/B} - 1}{2^{1/B} + 1} \cdot \frac{f_s}{f_1 \cdot 2^{(k-1)/B}}$$</div>
+
+  <div class="grid2">
+    <div>
+      <h3>参数</h3>
+      <table class="comparison-table">
+        <tr><th>参数</th><th>典型值</th><th>含义</th></tr>
+        <tr><td>$B$（每八度 bin 数）</td><td>12, 24, 48, 96</td><td>$B=12$ → 每半音一个 bin</td></tr>
+        <tr><td>$f_{\min}$</td><td>$\approx$ 27.5 Hz (A0)</td><td>最低分析频率</td></tr>
+        <tr><td>$f_{\max}$</td><td>$f_s / 2$</td><td>最高分析频率</td></tr>
+        <tr><td>$Q$（品质因数）</td><td>取决于 $B$</td><td>$Q = f / \Delta f$ = 恒定</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>与音乐的天然契合</h3>
+      <ul>
+        <li>当 $B = 12$ 时，CQT 的 bin 直接对应<strong>12 平均律的 12 个半音</strong></li>
+        <li>$B = 12 \times k$ 给出 $k$ 份微分音精度</li>
+        <li>钢琴的 88 个键可以用 ~88 个 CQT bin 完美覆盖——从 A0 (27.5 Hz) 到 C8 (4186 Hz)</li>
+        <li>人耳临界带约 ~24 带 → <span class="highlight">$B \approx 24$ 或 36 已足够感知分辨率</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout callout-success">
+    <strong>在项目中的使用：</strong>模块一 CQT 演示的核心内容——与 FFT 声谱图对比，展示 CQT 在低频区的卓越分辨率。模块三的 CQT 频率轴与小波的恒定 Q 特性完全一致。
+  </div>
+</div>
+
+<!-- ===== §7 CWT / Scalogram ===== -->
+<h2 id="s7">7. CWT / Scalogram — 连续小波变换 / 小波谱</h2>
+
+<div class="card">
+  <h3>本质</h3>
+  <p>CWT 是 CQT 的<strong>连续版本</strong>——尺度参数 $a$ 和位移参数 $b$ 取连续值，给出连续的时频表示。每个分析函数是一个由母小波派生的"子波"：</p>
+
+  <div class="formula-block">$$W(a, b) = \frac{1}{\sqrt{a}} \int_{-\infty}^{\infty} x(t) \cdot \psi^*\!\left(\frac{t - b}{a}\right) dt$$</div>
+
+  <p>其中 $a > 0$ 是尺度参数（$a$ 小 → 高频分析，$a$ 大 → 低频分析），$b$ 是时间位移，$\psi$ 是母小波（如 Morlet 小波）。</p>
+
+  <div class="grid2">
+    <div>
+      <h3>CWT 的"谱图"——Scalogram</h3>
+      <p>小波变换的模平方构成 <strong>scalogram</strong>：</p>
+      <div class="formula-block-sm">$$\text{Scalogram}(a, b) = |W(a, b)|^2$$</div>
+      <p>scalogram 在 $(b, 1/a)$ 平面上绘出，横轴 = 时间，纵轴 = 频率（对数），颜色 = 能量。</p>
+    </div>
+    <div>
+      <h3>CQT vs. CWT</h3>
+      <table class="comparison-table" style="font-size:.82rem;">
+        <tr><th>性质</th><th>CQT</th><th>CWT</th></tr>
+        <tr><td>频率轴</td><td>离散（$B$ bins/oct）</td><td><span class="highlight">连续</span></td></tr>
+        <tr><td>母函数</td><td>Gabor/Morlet</td><td>Morlet, Daubechies, …</td></tr>
+        <tr><td>恒定 Q</td><td>✅</td><td>✅</td></tr>
+        <tr><td>逆变换</td><td>近似（有限 bin）</td><td>精确（解析可逆）</td></tr>
+        <tr><td>计算</td><td>快速（FFT-based）</td><td>较慢（连续积分）</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="callout callout-purple">
+    <strong>关键区别：STFT 的窗长全局固定，CWT/CQT 的窗长随频率自适应。</strong>低频处 CWT 用长窗（高频率精度），高频处用短窗（高时间精度）——这正是人耳基底膜的工作方式。Daubechies (1990) 指出："The wavelet transform treats frequency in a logarithmic way, which is similar to our acoustic perception."
+  </div>
+
+  <div class="callout callout-info">
+    <strong>在项目中的使用：</strong>模块三（波包）的核心理论。CQT 演示中小波谱作为 CQT 的连续版本出现。SpectroFusionNet 使用 CWT 谱作为三个并行输入之一。
+  </div>
+</div>
+
+<!-- ===== §8 Gammatone ===== -->
+<h2 id="s8">8. Gammatone Spectrogram — 伽马通声谱图</h2>
+
+<div class="card">
+  <h3>本质</h3>
+  <p>Gammatone 滤波器组是对<strong>人耳耳蜗物理特性</strong>最直接的数学建模。每个滤波器模拟基底膜上一个位置的带通响应：</p>
+
+  <div class="formula-block">$$g(t) = t^{n-1} e^{-2\pi b t} \cos(2\pi f_c t + \phi)$$</div>
+
+  <p>其中 $n$ 是滤波器阶数（通常 4），$f_c$ 是中心频率，$b$ 是带宽（与 $f_c$ 通过 ERB 公式关联）。</p>
+
+  <div class="grid2">
+    <div>
+      <h3>ERB 带宽</h3>
+      <p>每个 Gammatone 滤波器的带宽由等效矩形带宽公式决定：</p>
+      <div class="formula-block-sm">$$\text{ERB}(f) = 24.7 \times (4.37 f / 1000 + 1)$$</div>
+      <p>这直接来自 Glasberg & Moore (1990) 对人耳听觉滤波器的心理声学测量。</p>
+    </div>
+    <div>
+      <h3>与 Mel 滤波器组的比较</h3>
+      <table class="comparison-table" style="font-size:.82rem;">
+        <tr><th>性质</th><th>Mel 滤波器</th><th>Gammatone</th></tr>
+        <tr><td>滤波器形状</td><td>三角形</td><td><span class="highlight">伽马函数 × 正弦</span></td></tr>
+        <tr><td>物理依据</td><td>心理声学（主观实验）</td><td><span class="highlight">耳蜗物理（客观测量）</span></td></tr>
+        <tr><td>带宽公式</td><td>Mel 尺度</td><td>ERB 公式</td></tr>
+        <tr><td>CNN 任务</td><td>标准（最广泛）</td><td>有效但较少使用</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="callout callout-info">
+    <strong>在项目中的使用：</strong>SpectroFusionNet (2025) 使用 Gammatone 谱作为三个并行 CNN 分支之一（→ ResNet-50），专门捕获耳蜗物理级别的时频信息。
+  </div>
+</div>
+
+<!-- ===== §9 Chromagram ===== -->
+<h2 id="s9">9. Chromagram — 色度图</h2>
+
+<div class="card">
+  <h3>本质</h3>
+  <p>色度图将整个频谱<strong>折叠到一个八度内的 12 个半音</strong>（C, C♯, D, …, B），忽略八度差异。每帧的输出是一个 12 维向量，表示 12 个音高类的总能量。</p>
+
+  <div class="formula-block">$$\text{Chroma}[p] = \sum_{k: f_k \equiv p \pmod{12}} |X[k]|^2, \quad p = 0, 1, \ldots, 11$$</div>
+
+  <h3>用途</h3>
+  <ul>
+    <li><strong>和弦识别</strong>：C 大三和弦 = C (1.0) + E (0.8) + G (0.7)，其他 bins 接近 0</li>
+    <li><strong>调性分析</strong>：长时间统计色度分布 → 判断大调/小调/调性</li>
+    <li><strong>音乐片段匹配</strong>：不同八度演奏同一旋律 → 色度图完全相同</li>
+    <li>可基于 STFT、CQT 或 CWT 计算——底层频谱分析不限</li>
+  </ul>
+
+  <div class="callout callout-info">
+    <strong>在项目中的使用：</strong>scaler-lab 的特征提取中使用色度图作为音阶/和弦分析的输入特征之一。在 Sonic Atlas 中未直接使用，但它是音色分析的常用辅助特征。
+  </div>
+</div>
+
+<!-- ===== §10 Gabor Atoms / Matching Pursuit ===== -->
+<h2 id="s10">10. Gabor Atoms / Matching Pursuit — 时频原子分解</h2>
+
+<div class="card">
+  <h3>本质</h3>
+  <p>Gabor 原子不是另一种"变换"——而是一种<strong>自适应的稀疏分解策略</strong>。它用一个过完备的"波包字典"逐个提取信号中最显著的时频成分：</p>
+
+  <div class="formula-block">$$\psi_{(t_0, f_0, \sigma)}(t) = e^{-\frac{(t - t_0)^2}{2\sigma^2}} \cdot e^{i 2\pi f_0 (t - t_0)}$$</div>
+
+  <p>匹配追踪（Matching Pursuit）算法从信号中迭代提取原子：</p>
+  <div class="formula-block-sm">$$s(t) \approx \sum_{k=1}^{K} a_k \cdot \psi_{(t_k, f_k, \sigma_k)}(t)$$</div>
+
+  <p>每个原子有 4 个参数：$(t_k, f_k, \sigma_k, a_k)$——时间中心、频率中心、时频展宽、复数振幅。</p>
+
+  <div class="grid2">
+    <div>
+      <h3>Gabor 原子 vs. 正弦波</h3>
+      <table class="comparison-table" style="font-size:.82rem;">
+        <tr><th>性质</th><th>正弦波 (FFT)</th><th>Gabor 原子</th></tr>
+        <tr><td>时间局域</td><td>无限长</td><td><span class="highlight">高斯窗内（~$2\sigma$）</span></td></tr>
+        <tr><td>频率局域</td><td>单一频率</td><td>高斯分布（带宽 $\sim 1/\sigma$）</td></tr>
+        <tr><td>参数数</td><td>2（频率、振幅）</td><td>4（$t, f, \sigma$, 振幅）</td></tr>
+        <tr><td>Heisenberg</td><td>频域完美，时域无界</td><td><span class="highlight">达到理论下限 $\Delta t \cdot \Delta f = 1/4\pi$</span></td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>稀疏性优势</h3>
+      <p>在包含瞬态的音乐信号上，Gabor 原子远比正弦波稀疏：</p>
+      <ul>
+        <li>钢琴起奏：1 个 Gabor 原子 vs. 数百个正弦波</li>
+        <li>打击乐冲击：~5 个原子 vs. 全部 22,050 个 bin</li>
+        <li>感知匹配追踪（PMP）可进一步压缩到<strong>500 个原子</strong>以内</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout callout-success">
+    <strong>在项目中的使用：</strong>模块三（波包）的理论核心和交互演示——展示了 FFT Top-K、FFT+Gabor 混合、频带分割、Gabor OMP 四种稀疏重建方法的残余误差对比。
+  </div>
+</div>
+
+<!-- ===== Summary Table ===== -->
+<h2>综合对照表</h2>
+
+<div class="card" style="overflow-x:auto;">
+<table class="comparison-table">
+  <tr>
+    <th>方法</th>
+    <th>频率轴</th>
+    <th>时间轴</th>
+    <th>窗长</th>
+    <th>输出维度</th>
+    <th>感知匹配</th>
+    <th>典型用途</th>
+  </tr>
+  <tr>
+    <td><strong>FFT</strong></td>
+    <td>等间距线性</td>
+    <td>无（全局）</td>
+    <td>全局固定</td>
+    <td>$N/2+1$ bins</td>
+    <td><span class="badge badge-red">差</span></td>
+    <td>稳态信号分析</td>
+  </tr>
+  <tr>
+    <td><strong>STFT</strong></td>
+    <td>等间距线性</td>
+    <td>帧序列</td>
+    <td>全局固定</td>
+    <td>$(N/2+1) \times T$</td>
+    <td><span class="badge badge-orange">中</span></td>
+    <td>通用时频分析</td>
+  </tr>
+  <tr>
+    <td><strong>Magnitude Spec.</strong></td>
+    <td>等间距线性</td>
+    <td>帧序列</td>
+    <td>全局固定</td>
+    <td>$(N/2+1) \times T$</td>
+    <td><span class="badge badge-orange">中</span></td>
+    <td>CNN 输入（基准）</td>
+  </tr>
+  <tr>
+    <td><strong>Mel Spec.</strong></td>
+    <td><span class="highlight">Mel（对数）</span></td>
+    <td>帧序列</td>
+    <td>全局固定</td>
+    <td>$M \times T$（~64–128）</td>
+    <td><span class="badge badge-green">好</span></td>
+    <td><strong>CNN 输入（标准）</strong></td>
+  </tr>
+  <tr>
+    <td><strong>MFCC</strong></td>
+    <td>Mel → DCT</td>
+    <td>帧序列</td>
+    <td>全局固定</td>
+    <td>$C \times T$（~13–20）</td>
+    <td><span class="badge badge-green">好</span></td>
+    <td>传统 ML / GMM / HMM</td>
+  </tr>
+  <tr>
+    <td><strong>CQT</strong></td>
+    <td><span class="highlight">对数（恒定 Q）</span></td>
+    <td>帧序列</td>
+    <td><span class="highlight">随频率缩放</span></td>
+    <td>$B \cdot \text{octaves} \times T$</td>
+    <td><span class="badge badge-green">好</span></td>
+    <td>音乐信号分析</td>
+  </tr>
+  <tr>
+    <td><strong>CWT / Scalogram</strong></td>
+    <td><span class="highlight">对数（恒定 Q）</span></td>
+    <td>连续</td>
+    <td><span class="highlight">随频率缩放</span></td>
+    <td>连续 $(a, b)$</td>
+    <td><span class="badge badge-green">好</span></td>
+    <td>精细多分辨率分析</td>
+  </tr>
+  <tr>
+    <td><strong>Gammatone</strong></td>
+    <td>ERB 尺度</td>
+    <td>帧序列</td>
+    <td><span class="highlight">随频率缩放</span></td>
+    <td>$N_{\text{filters}} \times T$</td>
+    <td><span class="badge badge-green">好+</span></td>
+    <td>耳蜗物理建模</td>
+  </tr>
+  <tr>
+    <td><strong>Chromagram</strong></td>
+    <td>12 半音（折叠）</td>
+    <td>帧序列</td>
+    <td>取决于底层</td>
+    <td>$12 \times T$</td>
+    <td><span class="badge badge-accent">特殊</span></td>
+    <td>和弦/调性分析</td>
+  </tr>
+  <tr>
+    <td><strong>Gabor MP</strong></td>
+    <td>自适应中心</td>
+    <td>自适应中心</td>
+    <td><span class="highlight">自适应 $\sigma$</span></td>
+    <td>$K$ 个四元组</td>
+    <td><span class="badge badge-green">好</span></td>
+    <td>稀疏时频分解</td>
+  </tr>
+</table>
+</div>
+
+<!-- ===== Time-Frequency Plane ===== -->
+<h2>时频平面上的位置</h2>
+
+<div class="card">
+  <h3>各种方法在 Heisenberg 不确定性下的位置</h3>
+  <canvas id="canvasTF" height="360"></canvas>
+  <p style="text-align:center;font-size:.82rem;color:var(--text2);">
+    横轴 = 时间分辨率，纵轴 = 频率分辨率。对角虚线 = Heisenberg 下限。越靠近左下角（精细时间 + 精细频率）的方法越"理想"——但物理定律禁止同时达到两者极限。
+  </p>
+</div>
+
+<!-- ===== What each demo uses ===== -->
+<h2>各演示中使用了哪些频谱</h2>
+
+<div class="card" style="overflow-x:auto;">
+<table class="comparison-table">
+  <tr>
+    <th>演示文件</th>
+    <th>使用的频谱表示</th>
+    <th>目的</th>
+  </tr>
+  <tr>
+    <td>cqt_wavelet_demo.html</td>
+    <td>FFT, CQT, CWT/Scalogram, STFT 声谱图</td>
+    <td>对比线性 vs. 对数频率分辨率；展示 150 Hz 纯音在线性声谱图上的"消失"</td>
+  </tr>
+  <tr>
+    <td>phase_perception_demo.html</td>
+    <td>FFT 频谱（幅度）</td>
+    <td>展示相位变化不影响频谱幅度</td>
+  </tr>
+  <tr>
+    <td>wave_packet_demo.html</td>
+    <td>FFT, Gabor Atoms, STFT</td>
+    <td>对比四种稀疏重建方法的残余误差</td>
+  </tr>
+  <tr>
+    <td>timbre_demo.html</td>
+    <td>频谱包络（谐波振幅条形图）</td>
+    <td>MDS 音色空间的物理对应——频谱重心、不规则度</td>
+  </tr>
+  <tr>
+    <td>cnn_feature_demo.html</td>
+    <td>STFT 声谱图, Mel 声谱图</td>
+    <td>线性 vs. Mel 频率的对比；CNN 卷积核层次分析</td>
+  </tr>
+</table>
+</div>
+
+<p style="margin-top:2rem;padding:1rem;text-align:center;font-size:.9rem;color:var(--text2);border-top:1px solid var(--border);">
+  <strong>音频频谱表示全景</strong> — Sonic Atlas 参考文档
+</p>
+
+</div><!-- end container -->
+
+<!-- ===== KaTeX CDN ===== -->
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '$', right: '$', display: false},
+      {left: '\\(', right: '\\)', display: false},
+      {left: '\\[', right: '\\]', display: true}
+    ]
+  });
+});
+</script>
+
+<script>
+'use strict';
+
+/* ── Time-Frequency Plane ── */
+function drawTF() {
+  const c = document.getElementById('canvasTF');
+  const ctx = c.getContext('2d');
+  const W = c.width = c.offsetWidth * 2, H = c.height = 360 * 2;
+  ctx.scale(2, 2);
+  const w = W / 2, h = H / 2;
+  ctx.clearRect(0, 0, w, h);
+
+  const pad = { l: 65, r: 20, t: 20, b: 55 };
+  const sw = w - pad.l - pad.r, sh = h - pad.t - pad.b;
+
+  // Axes
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t);
+  ctx.lineTo(pad.l, pad.t + sh);
+  ctx.lineTo(pad.l + sw, pad.t + sh);
+  ctx.stroke();
+
+  // X: time resolution (ms → px, log scale)
+  // Y: frequency resolution (Hz → px, log scale)
+  // Data: [name, timeRes (ms), freqRes (Hz), color, radius]
+  const methods = [
+    ['FFT',        23,   43,   '#c41a1a', 10],
+    ['STFT',       11.6, 43,   '#b85c00', 10],
+    ['Mel Spec.',  11.6, 170,  '#1a6dd4', 10],
+    ['MFCC',       11.6, 170,  '#6b21c4', 9],
+    ['CQT (B=12)', 23,   1.6,  '#1a7a2e', 10],
+    ['CWT',        5,    5,    '#c41a7a', 10],
+    ['Gammatone',  10,   35,   '#0d7a6e', 10],
+    ['Gabor MP',   2,    10,   '#8B4513', 10],
+    ['Chromagram', 11.6, 43,   '#DAA520', 8],
+  ];
+
+  // Log scale for both axes
+  const tMin = 0.5, tMax = 50; // ms
+  const fMin = 0.5, fMax = 500; // Hz
+
+  function tToX(t) { return pad.l + sw * (Math.log10(t) - Math.log10(tMin)) / (Math.log10(tMax) - Math.log10(tMin)); }
+  function fToY(f) { return pad.t + sh * (1 - (Math.log10(f) - Math.log10(fMin)) / (Math.log10(fMax) - Math.log10(fMin))); }
+
+  // Heisenberg limit: Δt · Δf ≥ 1/(4π) ≈ 0.0796
+  // In our units (ms, Hz): Δt(ms) · Δf(Hz) ≥ 79.6
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = '#aaa';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  const heisenberg = 79.6;
+  let first = true;
+  for (let t = tMin; t <= tMax; t *= 1.05) {
+    const f = heisenberg / t;
+    if (f < fMin || f > fMax) continue;
+    const x = tToX(t), y = fToY(f);
+    if (first) { ctx.moveTo(x, y); first = false; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Heisenberg label
+  ctx.fillStyle = '#999';
+  ctx.font = 'italic 10px system-ui';
+  ctx.textAlign = 'left';
+  ctx.fillText('Heisenberg 下限', tToX(2) + 5, fToY(heisenberg / 2) + 12);
+
+  // Grid lines
+  ctx.strokeStyle = '#f0f0f0';
+  ctx.lineWidth = 0.5;
+  [1, 5, 10, 50].forEach(t => {
+    const x = tToX(t);
+    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, pad.t + sh); ctx.stroke();
+    ctx.fillStyle = '#888';
+    ctx.font = '9px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(t + ' ms', x, pad.t + sh + 14);
+  });
+  [1, 5, 10, 50, 100, 500].forEach(f => {
+    const y = fToY(f);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + sw, y); ctx.stroke();
+    ctx.fillStyle = '#888';
+    ctx.font = '9px system-ui';
+    ctx.textAlign = 'right';
+    ctx.fillText(f + ' Hz', pad.l - 6, y + 3);
+  });
+
+  // Axis labels
+  ctx.fillStyle = '#666';
+  ctx.font = '11px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText('时间分辨率（越小越好 →）', pad.l + sw / 2, pad.t + sh + 35);
+  ctx.save();
+  ctx.translate(14, pad.t + sh / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('频率分辨率（越小越好 →）', 0, 0);
+  ctx.restore();
+
+  // Plot methods
+  methods.forEach(m => {
+    const [name, tRes, fRes, color, r] = m;
+    const x = tToX(tRes), y = fToY(fRes);
+
+    // Glow
+    ctx.beginPath();
+    ctx.arc(x, y, r + 3, 0, Math.PI * 2);
+    ctx.fillStyle = color + '22';
+    ctx.fill();
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 9px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(name, x, y + r + 3);
+  });
+}
+
+window.addEventListener('resize', drawTF);
+drawTF();
+</script>
+
+</body>
+</html>
