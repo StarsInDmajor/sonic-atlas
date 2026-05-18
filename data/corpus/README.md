@@ -208,11 +208,13 @@ for entry in music_entries:
 
 ## 构建脚本
 
+各数据集的下载链接、许可证与获取方式详见 [docs/data_sources.md](../../docs/data_sources.md)。
+
 ```bash
 # 从原始数据源重新构建 corpus
 uv run python experiments/build_corpus.py \
   --output data/corpus \
-  --source-dir /tmp \
+  --source-dir /tmp/sonic-atlas-sources \
   --sources ESC-50 TinySOL Philharmonia FSD50K LibriSpeech synthetic
 ```
 

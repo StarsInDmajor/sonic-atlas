@@ -113,6 +113,7 @@ Audio
 | [docs/vision.md](docs/vision.md) | 项目愿景：声音特征如何成为创作材料 |
 | [docs/architecture.md](docs/architecture.md) | 仓库结构与系统数据流 |
 | [docs/roadmap.md](docs/roadmap.md) | 后续实验与系统路线图 |
+| [docs/data_sources.md](docs/data_sources.md) | 音源数据集下载链接与获取指南 |
 | [docs/literature/00_research_plan.md](docs/literature/00_research_plan.md) | 主线研究计划 |
 | [docs/literature/01_first_round_review.md](docs/literature/01_first_round_review.md) | 第一轮 literature review |
 | [docs/literature/02_feature_taxonomy.md](docs/literature/02_feature_taxonomy.md) | 面向创作的声音特征分类、评价维度与 baseline feature set |
